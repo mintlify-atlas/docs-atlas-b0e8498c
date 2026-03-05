@@ -1,0 +1,80 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "BlackWeb",
+  "projectDescription": "Domain blocklist aggregator for Squid-Cache proxy servers, blocking porn, malware, trackers, and other malicious content",
+  "theme": "aspen",
+  "primaryColor": "#c0c1c1",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Usage Guide",
+            "pages": [
+              "usage/download",
+              "usage/squid-configuration",
+              "usage/advanced-rules",
+              "usage/verification"
+            ]
+          },
+          {
+            "group": "Update Process",
+            "pages": [
+              "update/overview",
+              "update/dependencies",
+              "update/update-script",
+              "update/dns-lookup",
+              "update/debugging"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/sources",
+              "reference/data-processing",
+              "reference/configuration-files",
+              "reference/troubleshooting"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/notice",
+              "contributing/guidelines",
+              "contributing/license"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Aggregates 4.7M+ blocked domains from public blocklists",
+    "Optimized for Squid-Cache proxy with domain debugging",
+    "DNS validation and TLD verification",
+    "Punycode/IDN support to prevent homograph attacks",
+    "Advanced filtering rules for domains, TLDs, and patterns",
+    "Automated update script with parallel DNS lookups"
+  ],
+  "publicApiSurface": [
+    "bwupdate.sh - Main update script",
+    "checksources.sh - Domain source verification tool",
+    "debugerror.py - Error debugging script",
+    "blackweb.txt - Main blocklist file (4.7M domains)",
+    "allowdomains.txt - Whitelist configuration",
+    "blockdomains.txt - Additional block configuration",
+    "blocktlds.txt - TLD blocking configuration",
+    "streaming.txt - Streaming domain blocklist"
+  ]
+}
