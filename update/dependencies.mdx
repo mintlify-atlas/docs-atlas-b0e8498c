@@ -1,0 +1,176 @@
+---
+title: "Dependencies"
+description: "Required packages and Squid installation for BlackWeb updates"
+---
+
+## System Requirements
+
+The BlackWeb update process requires:
+
+- **Python**: Version 3.x
+- **Bash**: Version 5.x
+- **Operating System**: Ubuntu 24.04 (recommended)
+
+<Warning>
+  The update script is designed for Ubuntu 24.04. Using other versions or distributions may work but is at your own risk.
+</Warning>
+
+## Required Packages
+
+Install the following dependencies before running the update script:
+
+```bash
+sudo apt install wget git curl libnotify-bin perl tar rar unrar unzip zip gzip python-is-python3 idn2 iconv
+```
+
+### Package Descriptions
+
+| Package | Purpose |
+|---------|--------|
+| `wget`, `curl` | Download blocklist sources |
+| `git` | Clone repositories and download folders |
+| `libnotify-bin` | Desktop notifications (optional) |
+| `perl` | Text processing |
+| `tar`, `rar`, `unrar`, `unzip`, `zip`, `gzip` | Archive extraction |
+| `python-is-python3` | Python 3 compatibility |
+| `idn2` | Internationalized Domain Names (Punycode) |
+| `iconv` | Character encoding conversion |
+
+## Dependency Verification
+
+The `bwupdate.sh` script automatically checks for missing dependencies:
+
+```bash bwupdate/bwupdate.sh
+# DEPENDENCIES
+pkgs='wget git curl libnotify-bin perl tar rar unrar unzip zip gzip python-is-python3 idn2 iconv'
+for pkg in $pkgs; do
+  if ! dpkg -s "$pkg" &>/dev/null && ! command -v "$pkg" &>/dev/null; then
+    echo "❌ '$pkg' is not installed. Run:"
+    echo "sudo apt install $pkg"
+    exit 1
+  fi
+done
+```
+
+If any package is missing, the script will exit with an error message and installation instructions.
+
+## Squid-Cache Installation
+
+<Note>
+  Ensure Squid-Cache is installed correctly before running the update process.
+</Note>
+
+### Installation Script
+
+If you encounter any Squid-related issues, use this installation script:
+
+```bash squid_install.sh
+#!/bin/bash
+
+# kill old version
+while pgrep squid > /dev/null; do
+    echo "Waiting for Squid to stop..."
+    killall -s SIGTERM squid &>/dev/null
+    sleep 5
+done
+
+# squid remove (if exist)
+apt purge -y squid* &>/dev/null
+rm -rf /var/spool/squid* /var/log/squid* /etc/squid* /dev/shm/* &>/dev/null
+
+# squid install (you can use 'squid-openssl' or 'squid')
+apt install -y squid-openssl squid-langpack squid-common squidclient squid-purge
+
+# create log
+if [ ! -d /var/log/squid ]; then
+    mkdir -p /var/log/squid
+fi &>/dev/null
+if [[ ! -f /var/log/squid/{access,cache,store,deny}.log ]]; then
+    touch /var/log/squid/{access,cache,store,deny}.log
+fi &>/dev/null
+
+# permissions
+chown -R proxy:proxy /var/log/squid
+
+# enable service
+systemctl enable squid.service
+systemctl start squid.service
+echo "Done"
+```
+
+### Running the Installation Script
+
+1. Save the script as `squid_install.sh`
+2. Make it executable:
+   ```bash
+   chmod +x squid_install.sh
+   ```
+3. Run with sudo:
+   ```bash
+   sudo ./squid_install.sh
+   ```
+
+### What This Script Does
+
+<Steps>
+  <Step title="Stop Existing Squid">
+    Gracefully terminates any running Squid processes using SIGTERM.
+  </Step>
+
+  <Step title="Clean Previous Installation">
+    Removes all Squid packages, configuration files, cache, and logs.
+  </Step>
+
+  <Step title="Install Squid Packages">
+    Installs `squid-openssl` along with language packs, common utilities, client tools, and purge utilities.
+  </Step>
+
+  <Step title="Create Log Directory">
+    Sets up `/var/log/squid` with proper log files: `access.log`, `cache.log`, `store.log`, and `deny.log`.
+  </Step>
+
+  <Step title="Set Permissions">
+    Assigns ownership to the `proxy` user for all Squid logs.
+  </Step>
+
+  <Step title="Enable Squid Service">
+    Configures Squid to start automatically on boot and starts the service immediately.
+  </Step>
+</Steps>
+
+## Squid Package Options
+
+You can choose between:
+
+- **`squid-openssl`**: Squid with SSL/TLS support (recommended)
+- **`squid`**: Standard Squid without SSL features
+
+<Tip>
+  Use `squid-openssl` if you plan to inspect HTTPS traffic or need SSL bumping capabilities.
+</Tip>
+
+## Verifying Installation
+
+After installation, verify Squid is running:
+
+```bash
+systemctl status squid.service
+```
+
+Check the Squid version:
+
+```bash
+squid -v
+```
+
+Test the configuration:
+
+```bash
+squid -k parse
+```
+
+## Next Steps
+
+<Card title="Run the Update Script" icon="play" href="/update/update-script">
+  Now that dependencies are installed, learn how to execute the update process
+</Card>

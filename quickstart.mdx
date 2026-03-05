@@ -1,80 +1,318 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get BlackWeb up and running in minutes with this step-by-step guide
 ---
 
-## Get started in three steps
+This guide will help you download, configure, and verify BlackWeb on your Squid-Cache proxy server in just a few minutes.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- A working Squid-Cache installation
+- Root or sudo access to your server
+- Basic command-line knowledge
+- Active internet connection
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  BlackWeb is designed specifically for Squid-Cache. Make sure Squid is installed and running before proceeding.
 </Note>
+
+## Quick Installation
+
+<Steps>
+  <Step title="Download BlackWeb">
+    Download the latest pre-compiled BlackWeb blocklist:
+
+    ```bash
+    wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz && cat blackweb.tar.gz* | tar xzf -
+    ```
+
+    This downloads and extracts `blackweb.txt` to your current directory.
+
+    <Accordion title="If multipart files exist">
+      If the file is split into multiple parts due to size, use this script:
+
+      ```bash
+      #!/bin/bash
+
+      # Variables
+      url="https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz"
+      wgetd="wget -q -c --timestamping --no-check-certificate --retry-connrefused --timeout=10 --tries=4 --show-progress"
+
+      # TMP folder
+      output_dir="bwtmp"
+      mkdir -p "$output_dir"
+
+      # Download
+      if $wgetd "$url"; then
+        echo "File downloaded: $(basename $url)"
+      else
+        echo "Main file not found. Searching for multiparts..."
+
+        # Multiparts from a to z
+        all_parts_downloaded=true
+        for part in {a..z}{a..z}; do
+          part_url="${url%.*}.$part"
+          if $wgetd "$part_url"; then
+            echo "Part downloaded: $(basename $part_url)"
+          else
+            echo "Part not found: $part"
+            all_parts_downloaded=false
+            break
+          fi
+        done
+
+        if $all_parts_downloaded; then
+          # Rebuild the original file in the current directory
+          cat blackweb.tar.gz.* > blackweb.tar.gz
+          echo "Multipart file rebuilt"
+        else
+          echo "Multipart process cannot be completed"
+          exit 1
+        fi
+      fi
+
+      # Unzip the file to the output folder
+      tar -xzf blackweb.tar.gz -C "$output_dir"
+
+      echo "Done"
+      ```
+    </Accordion>
+  </Step>
+
+  <Step title="Verify File Integrity (Optional)">
+    Verify the downloaded file matches the official checksum:
+
+    ```bash
+    wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+    LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+    REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+    echo "$LOCAL" && echo "$REMOTE" && [ "$LOCAL" = "$REMOTE" ] && echo OK || echo FAIL
+    ```
+
+    You should see two matching hashes followed by "OK".
+  </Step>
+
+  <Step title="Move to ACL Directory">
+    Create the ACL directory and move the file:
+
+    ```bash
+    sudo mkdir -p /etc/acl
+    sudo mv blackweb.txt /etc/acl/blackweb.txt
+    ```
+
+    <Note>
+      You can use any directory you prefer. Just remember to update the path in the Squid configuration.
+    </Note>
+  </Step>
+
+  <Step title="Configure Squid-Cache">
+    Edit your Squid configuration file:
+
+    ```bash
+    sudo nano /etc/squid/squid.conf
+    ```
+
+    Add these lines in the ACL section (before any `http_access allow` rules):
+
+    ```squid /etc/squid/squid.conf
+    # INSERT YOUR OWN RULE(S) HERE TO ALLOW ACCESS FROM YOUR CLIENTS
+
+    # Block Rule for Blackweb
+    acl blackweb dstdomain "/etc/acl/blackweb.txt"
+    http_access deny blackweb
+    ```
+
+    <Warning>
+      Place the BlackWeb ACL **before** any `http_access allow` rules to ensure blocked domains are denied before allowing access.
+    </Warning>
+  </Step>
+
+  <Step title="Reload Squid">
+    Test the configuration and reload Squid:
+
+    ```bash
+    # Test configuration syntax
+    sudo squid -k parse
+
+    # If no errors, reload Squid
+    sudo squid -k reconfigure
+    ```
+
+    <Accordion title="Troubleshooting configuration errors">
+      If you see errors:
+
+      1. **Check file path**: Ensure `/etc/acl/blackweb.txt` exists and is readable
+      2. **Verify syntax**: Make sure there are no typos in the ACL definition
+      3. **Check permissions**: Ensure Squid can read the file:
+         ```bash
+         sudo chown proxy:proxy /etc/acl/blackweb.txt
+         sudo chmod 644 /etc/acl/blackweb.txt
+         ```
+      4. **Review logs**: Check `/var/log/squid/cache.log` for detailed error messages
+    </Accordion>
+  </Step>
+
+  <Step title="Verify It's Working">
+    Test that blocked domains are actually being denied:
+
+    ```bash
+    # Configure curl to use your proxy (adjust host:port as needed)
+    curl -x http://localhost:3128 -I http://malicious-site.example.com
+    ```
+
+    You should receive an HTTP 403 (Access Denied) response.
+
+    Alternatively, check Squid's access log:
+
+    ```bash
+    sudo tail -f /var/log/squid/access.log
+    ```
+
+    Look for `TCP_DENIED` entries when accessing blocked domains.
+  </Step>
+</Steps>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="Advanced Configuration" icon="sliders" href="/installation">
+    Learn about advanced rules, allowlists, and optimization
+  </Card>
+  <Card title="Update Process" icon="arrows-rotate" href="/update/overview">
+    Set up automated updates to keep your blocklist current
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/reference/troubleshooting">
+    Resolve common issues and optimize performance
+  </Card>
+  <Card title="Advanced Rules" icon="code" href="/usage/advanced-rules">
+    Configure TLD blocking, Punycode filtering, and more
+  </Card>
+</CardGroup>
+
+## Quick Configuration Examples
+
+### Allow Essential Domains
+
+Create an allowlist for essential services:
+
+```bash
+# Create allowlist file
+sudo nano /etc/acl/allowdomains.txt
+```
+
+Add essential domains:
+
+```text /etc/acl/allowdomains.txt
+.accounts.google.com
+.accounts.youtube.com
+.github.com
+.microsoft.com
+```
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Allow Rule for Domains (place BEFORE blackweb rule)
+acl allowdomains dstdomain "/etc/acl/allowdomains.txt"
+http_access allow allowdomains
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+```
+
+### Block Additional Domains
+
+Create a custom blocklist for domains not in BlackWeb:
+
+```bash
+sudo nano /etc/acl/blockdomains.txt
+```
+
+Add custom domains:
+
+```text /etc/acl/blockdomains.txt
+.custom-blocked-site.com
+.another-blocked-domain.org
+```
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Block Rule for Custom Domains
+acl blockdomains dstdomain "/etc/acl/blockdomains.txt"
+http_access deny blockdomains
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+```
+
+## Updating BlackWeb
+
+To update to the latest version, simply download the new version and reload Squid:
+
+```bash
+# Download latest version
+cd /etc/acl
+sudo wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz
+sudo tar xzf blackweb.tar.gz
+
+# Reload Squid
+sudo squid -k reconfigure
+```
+
+<Tip>
+  Consider setting up a cron job to automatically download updates weekly. See the [Update Process](/update/overview) guide for details.
+</Tip>
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="Squid won't start after adding BlackWeb">
+    **Solution**: The file might be too large for your system's memory limits. Check:
+    
+    ```bash
+    # Increase file descriptor limits
+    sudo nano /etc/systemd/system/squid.service.d/override.conf
+    ```
+    
+    Add:
+    ```ini
+    [Service]
+    LimitNOFILE=65536
+    ```
+    
+    Then reload:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl restart squid
+    ```
+  </Accordion>
+
+  <Accordion title="Web browsing is very slow">
+    **Solution**: Squid needs to load the entire 118.8 MB file into memory. Ensure:
+    
+    - Your server has adequate RAM (minimum 2GB recommended)
+    - Squid's cache is properly configured
+    - Consider using SSD storage for Squid's cache
+  </Accordion>
+
+  <Accordion title="Some legitimate sites are blocked">
+    **Solution**: Add them to an allowlist (see examples above). Remember, BlackWeb aggregates public lists and may include false positives.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+Congratulations! You now have BlackWeb running on your Squid-Cache server. 
+
+For more advanced configuration options, including:
+- Punycode/IDN blocking
+- TLD-based filtering  
+- Streaming service controls
+- Pattern-based blocking
+
+Continue to the [Installation Guide](/installation) for comprehensive setup instructions.

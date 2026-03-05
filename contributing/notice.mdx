@@ -1,0 +1,98 @@
+---
+title: 'Notice'
+description: 'Important notices about BlackWeb project, including verification process and terminology clarification'
+---
+
+## Important Information
+
+Before using or contributing to BlackWeb, please read the following important notices:
+
+### Third-Party Components
+
+<Info>
+This project includes third-party components from various public blocklist sources.
+</Info>
+
+### Not a Blacklist Service
+
+<Warning>
+**BlackWeb is NOT a blacklist service itself**. It does not independently verify domains. Its purpose is to consolidate and reformat public blacklist sources to make them compatible with Squid-Cache.
+</Warning>
+
+### Platform Compatibility
+
+BlackWeb is designed exclusively for [Squid-Cache](http://www.squid-cache.org/). Due to the large number of blocked domains, it is **not recommended** to use it in other environments such as:
+
+- DNSMasq
+- Pi-Hole
+- Windows Hosts File
+
+Using BlackWeb in these environments could slow down or crash your system. **Use it at your own risk**.
+
+<Note>
+For more information about compatibility issues, check [Issue 10](https://github.com/maravento/blackweb/issues/10#issuecomment-650834301)
+</Note>
+
+## Domain Removal Request
+
+If your domain appears in BlackWeb and you believe this is an error, follow these steps:
+
+### Step 1: Understand the Process
+
+Since BlackWeb consolidates public blocklist sources, you need to identify which upstream source(s) list your domain.
+
+### Step 2: Check the Sources
+
+Review the public [SOURCES](https://github.com/maravento/blackweb#sources) to identify where your domain is listed.
+
+### Step 3: Automated Verification
+
+You can use the following script to automatically check which sources contain your domain:
+
+```bash
+wget https://raw.githubusercontent.com/maravento/blackweb/refs/heads/master/bwupdate/tools/checksources.sh
+chmod +x checksources.sh
+./checksources.sh
+```
+
+#### Example Output
+
+```bash
+[?] Enter domain to search: kickass.to
+
+[*] Searching for 'kickass.to'...
+[+] Domain found in: https://github.com/fabriziosalmi/blacklists/releases/download/latest/blacklist.txt
+[+] Domain found in: https://hostsfile.org/Downloads/hosts.txt
+[+] Domain found in: https://raw.githubusercontent.com/blocklistproject/Lists/master/everything.txt
+[+] Domain found in: https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/ultimate.txt
+[+] Domain found in: https://raw.githubusercontent.com/Ultimate-Hosts-Blacklist/Ultimate.Hosts.Blacklist/master/hosts/hosts0
+[+] Domain found in: https://sysctl.org/cameleon/hosts
+[+] Domain found in: https://v.firebog.net/hosts/Kowabit.txt
+Done
+```
+
+### Step 4: Contact Source Maintainer
+
+Contact the maintainer of the upstream list(s) where your domain appears and request its removal.
+
+### Step 5: Automatic Update
+
+<Info>
+Once the domain is removed from the upstream source, it will automatically disappear from BlackWeb in the next update.
+</Info>
+
+## Terminology Clarification
+
+### The Term "Blacklist"
+
+Due to recent arbitrary changes in computer terminology, it is necessary to clarify the meaning and connotation of the term **blacklist** associated with this project.
+
+<Accordion title="Definition from Wikipedia">
+*In computing, a blacklist, denylist or blocklist is a basic access control mechanism that allows through all elements (email addresses, users, passwords, URLs, IP addresses, domain names, file hashes, etc.), except those explicitly mentioned. Those items on the list are denied access. The opposite is a whitelist, which means only items on the list are let through whatever gate is being used.*
+
+Source: [Wikipedia - Blacklist (computing)](https://en.wikipedia.org/wiki/Blacklist_(computing))
+</Accordion>
+
+<Note>
+The terms **blacklist**, **blocklist**, **blackweb**, **blackip**, **whitelist** and similar are technical computing terms that have nothing to do with racial discrimination. These terms are used purely in their technical context as standard industry terminology for access control mechanisms.
+</Note>

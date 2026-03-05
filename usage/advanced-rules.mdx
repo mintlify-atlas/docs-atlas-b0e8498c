@@ -1,0 +1,322 @@
+---
+title: Advanced Filtering Rules
+description: Implement sophisticated domain filtering with allowlists, TLD blocking, punycode protection, pattern matching, and streaming controls
+---
+
+BlackWeb contains millions of domains, so fine-tuned filtering is essential to avoid blocking legitimate services while maintaining strong security.
+
+## Complete Advanced Configuration
+
+Here's the recommended complete configuration with all advanced rules:
+
+```bash squid.conf
+# INSERT YOUR OWN RULE(S) HERE TO ALLOW ACCESS FROM YOUR CLIENTS
+
+# Allow Rule for Domains
+acl allowdomains dstdomain "/path_to/allowdomains.txt"
+http_access allow allowdomains
+
+# Block Rule for Punycode
+acl punycode dstdom_regex -i \.xn--.*
+http_access deny punycode
+
+# Block Rule for gTLD, sTLD, ccTLD
+acl blocktlds dstdomain "/path_to/blocktlds.txt"
+http_access deny blocktlds
+
+# Block Rule for Domains
+acl blockdomains dstdomain "/path_to/blockdomains.txt"
+http_access deny blockdomains
+
+# Block Rule for Patterns (Optional)
+# https://raw.githubusercontent.com/maravento/vault/refs/heads/master/blackshield/acl/squid/blockpatterns.txt
+acl blockwords url_regex -i "/path_to/blockpatterns.txt"
+http_access deny blockwords
+
+# Block Rule for web3 (Optional)
+# https://raw.githubusercontent.com/maravento/vault/refs/heads/master/blackshield/acl/web3/web3domains.txt
+acl web3 dstdomain "/path_to/web3domains.txt"
+http_access deny web3
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/path_to/blackweb.txt"
+http_access deny blackweb
+```
+
+<Warning>
+**Rule Order Matters!** Allowlists must come before blocklists to function correctly.
+</Warning>
+
+## Allow Rule for Essential Domains
+
+### Purpose
+
+Use `allowdomains.txt` to exclude essential domains or subdomains that might be blocked by BlackWeb but are necessary for legitimate services.
+
+### Configuration
+
+```bash
+acl allowdomains dstdomain "/path_to/allowdomains.txt"
+http_access allow allowdomains
+```
+
+### Why This Matters
+
+<Note>
+According to [Squid's documentation](http://wiki.squid-cache.org/ConfigExamples/Streams/YouTube), subdomains like `accounts.google.com` and `accounts.youtube.com` may be used by Google for authentication within its ecosystem. Blocking them could disrupt access to services like Gmail, Drive, Docs, and others.
+</Note>
+
+### Example allowdomains.txt
+
+```text allowdomains.txt
+.accounts.google.com
+.accounts.youtube.com
+.yahoo.com
+.github.com
+.microsoft.com
+.office.com
+```
+
+## Block Rule for Additional Domains
+
+### Purpose
+
+Use `blockdomains.txt` to block domains not included in `blackweb.txt`, such as organization-specific blocked sites.
+
+### Configuration
+
+```bash
+acl blockdomains dstdomain "/path_to/blockdomains.txt"
+http_access deny blockdomains
+```
+
+### Example blockdomains.txt
+
+```text blockdomains.txt
+.example-blocked-site.com
+.time-wasting-site.net
+.internal-blocked.org
+```
+
+## Block Rule for Top-Level Domains
+
+### Purpose
+
+Use `blocktlds.txt` to block entire top-level domains (gTLD, sTLD, ccTLD, etc.) that are commonly associated with spam, malware, or unwanted content.
+
+### Configuration
+
+```bash
+acl blocktlds dstdomain "/path_to/blocktlds.txt"
+http_access deny blocktlds
+```
+
+### How It Works
+
+**Input domains:**
+```text
+.bardomain.xxx
+.subdomain.bardomain.xxx
+.bardomain.ru
+.bardomain.adult
+.foodomain.com
+.foodomain.porn
+```
+
+**Output (blocked):**
+```text
+.foodomain.com
+```
+
+All `.xxx`, `.adult`, `.porn`, and `.ru` domains are blocked based on their TLD, while `.com` remains accessible.
+
+### Example blocktlds.txt
+
+```text blocktlds.txt
+.xxx
+.adult
+.porn
+.webcam
+.click
+.download
+```
+
+## Punycode Protection (IDN Homograph Attack)
+
+### Purpose
+
+Block [Punycode - RFC3492](https://datatracker.ietf.org/doc/html/rfc3492) and internationalized domain names (IDN) to prevent [IDN homograph attacks](https://en.wikipedia.org/wiki/IDN_homograph_attack), where attackers use similar-looking characters to create fake domains.
+
+### Configuration
+
+```bash
+acl punycode dstdom_regex -i \.xn--.*
+http_access deny punycode
+```
+
+### How It Works
+
+**Input domains:**
+```text
+.bücher.com       (rendered as xn--bcher-kva.com)
+.mañana.com       (rendered as xn--maana-pta.com)
+.google.com       (ASCII - allowed)
+.auth.wikimedia.org (ASCII - allowed)
+.xn--fiqz9s       (Punycode - blocked)
+.xn--p1ai         (Punycode - blocked)
+```
+
+**ASCII Output (allowed):**
+```text
+.google.com
+.auth.wikimedia.org
+```
+
+All domains containing `xn--` (Punycode prefix) are blocked to prevent homograph attacks.
+
+<Info>
+For more information, visit [welivesecurity: Homograph attacks](https://www.welivesecurity.com/2017/07/27/homograph-attacks-see-to-believe/).
+</Info>
+
+## Block Rule for Patterns (Words)
+
+### Purpose
+
+Block URLs containing specific keywords or patterns in the URL path.
+
+<Warning>
+**Caution**: This rule can generate false positives. Use carefully and test thoroughly.
+</Warning>
+
+### Configuration
+
+```bash
+# Download ACL:
+sudo wget -P /etc/acl/ https://raw.githubusercontent.com/maravento/vault/refs/heads/master/blackshield/acl/squid/blockwords.txt
+
+# Squid Rule to Block Words:
+acl blockwords url_regex -i "/etc/acl/blockwords.txt"
+http_access deny blockwords
+```
+
+### How It Works
+
+**Input URLs:**
+```text
+.bittorrent.com
+https://www.google.com/search?q=torrent
+https://www.google.com/search?q=mydomain
+https://www.google.com/search?q=porn
+.mydomain.com
+```
+
+**Output (allowed):**
+```text
+https://www.google.com/search?q=mydomain
+.mydomain.com
+```
+
+URLs containing "torrent", "porn", or "bittorrent" are blocked, while benign searches remain accessible.
+
+## Streaming Control (Optional)
+
+### Purpose
+
+Use `streaming.txt` to block streaming domains not included in `blackweb.txt`, such as YouTube, Facebook Live, or other video platforms.
+
+### Configuration
+
+```bash
+acl streaming dstdomain "/path_to/streaming.txt"
+http_access deny streaming
+```
+
+### Important Considerations
+
+<Note>
+This list may contain overlapping domains. It's important to manually clean it according to your objective:
+
+**Option 1: Block entire platform (e.g., Facebook)**
+```text streaming.txt
+.fbcdn.net
+.facebook.com
+```
+This blocks Facebook entirely.
+
+**Option 2: Block specific features (e.g., Facebook streaming only)**
+```text streaming.txt
+.z-p3-video.flpb1-1.fna.fbcdn.net
+```
+This blocks streaming content while allowing general Facebook access.
+</Note>
+
+### Example streaming.txt
+
+```text streaming.txt
+# YouTube (complete block)
+.youtube.com
+.googlevideo.com
+.ytimg.com
+
+# Facebook Video (selective block)
+.z-p3-video.flpb1-1.fna.fbcdn.net
+
+# Twitch
+.twitch.tv
+.ttvnw.net
+```
+
+## Testing Your Advanced Rules
+
+After configuring advanced rules:
+
+<Steps>
+  <Step title="Validate Configuration">
+    ```bash
+    sudo squid -k parse
+    ```
+  </Step>
+  
+  <Step title="Restart Squid">
+    ```bash
+    sudo systemctl restart squid
+    ```
+  </Step>
+  
+  <Step title="Test Allow Rules">
+    Verify that allowed domains (like `accounts.google.com`) are accessible
+  </Step>
+  
+  <Step title="Test Block Rules">
+    Confirm that blocked domains, TLDs, and patterns are denied
+  </Step>
+  
+  <Step title="Monitor Logs">
+    ```bash
+    sudo tail -f /var/log/squid/access.log
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+<Accordion title="Start with allowlists">
+  Before deploying BlackWeb broadly, create a comprehensive `allowdomains.txt` with all essential business and authentication domains.
+</Accordion>
+
+<Accordion title="Test in stages">
+  Implement rules gradually:
+  1. Start with basic BlackWeb blocking
+  2. Add allowlists
+  3. Enable punycode protection
+  4. Add TLD blocking
+  5. Finally, add pattern matching and streaming controls
+</Accordion>
+
+<Accordion title="Document your customizations">
+  Keep detailed notes on which domains you've added to custom lists and why, especially for `allowdomains.txt`.
+</Accordion>
+
+<Accordion title="Regular review">
+  Periodically review your custom lists and remove entries that are no longer needed.
+</Accordion>

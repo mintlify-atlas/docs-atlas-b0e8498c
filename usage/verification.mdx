@@ -1,0 +1,299 @@
+---
+title: Checksum Verification
+description: Verify the integrity of your BlackWeb download using SHA256 checksums
+---
+
+After downloading BlackWeb, it's crucial to verify the file's integrity to ensure it hasn't been corrupted during download or tampered with.
+
+## Why Verify Checksums?
+
+Checksum verification ensures:
+
+- **File integrity**: The download wasn't corrupted during transfer
+- **Authenticity**: The file matches the official release
+- **Security**: The file hasn't been tampered with by a third party
+
+<Note>
+BlackWeb is a large file (118.8 MB with 4.7+ million domains), making verification especially important.
+</Note>
+
+## Quick Verification
+
+Run this one-liner to download, extract, and verify BlackWeb:
+
+```bash
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz && cat blackweb.tar.gz* | tar xzf -
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+LOCAL=$(sha256sum blackweb.txt | awk '{print $1}'); REMOTE=$(awk '{print $1}' blackweb.txt.sha256); echo "$LOCAL" && echo "$REMOTE" && [ "$LOCAL" = "$REMOTE" ] && echo OK || echo FAIL
+```
+
+## Step-by-Step Verification
+
+<Steps>
+  <Step title="Download BlackWeb">
+    Download and extract the BlackWeb archive:
+    
+    ```bash
+    wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz && cat blackweb.tar.gz* | tar xzf -
+    ```
+  </Step>
+  
+  <Step title="Download Checksum File">
+    Download the official SHA256 checksum:
+    
+    ```bash
+    wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+    ```
+  </Step>
+  
+  <Step title="Calculate Local Checksum">
+    Compute the SHA256 hash of your downloaded file:
+    
+    ```bash
+    LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+    echo "Local checksum: $LOCAL"
+    ```
+  </Step>
+  
+  <Step title="Extract Remote Checksum">
+    Extract the official checksum from the downloaded file:
+    
+    ```bash
+    REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+    echo "Remote checksum: $REMOTE"
+    ```
+  </Step>
+  
+  <Step title="Compare Checksums">
+    Compare both checksums:
+    
+    ```bash
+    [ "$LOCAL" = "$REMOTE" ] && echo "✓ OK - File verified" || echo "✗ FAIL - Checksum mismatch"
+    ```
+  </Step>
+</Steps>
+
+## Understanding the Output
+
+### Successful Verification
+
+```bash
+47e3f8a9b2c1d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0
+47e3f8a9b2c1d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0
+OK
+```
+
+The two hashes match, indicating the file is authentic and intact.
+
+### Failed Verification
+
+```bash
+47e3f8a9b2c1d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0
+12a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3
+FAIL
+```
+
+The hashes don't match. **Do not use this file.** Re-download BlackWeb.
+
+## Manual Verification
+
+If you prefer manual verification:
+
+### 1. Generate Local Hash
+
+```bash
+sha256sum blackweb.txt
+```
+
+### 2. View Official Hash
+
+```bash
+cat blackweb.txt.sha256
+```
+
+### 3. Compare Visually
+
+Ensure both hashes are identical.
+
+## Automated Verification Script
+
+Create a reusable verification script:
+
+```bash verify-blackweb.sh
+#!/bin/bash
+
+echo "[*] Verifying BlackWeb integrity..."
+
+if [ ! -f "blackweb.txt" ]; then
+    echo "[!] Error: blackweb.txt not found"
+    exit 1
+fi
+
+if [ ! -f "blackweb.txt.sha256" ]; then
+    echo "[!] Downloading checksum file..."
+    wget -q -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+fi
+
+LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+
+echo "[+] Local checksum:  $LOCAL"
+echo "[+] Remote checksum: $REMOTE"
+
+if [ "$LOCAL" = "$REMOTE" ]; then
+    echo "[✓] Verification successful - File is authentic"
+    exit 0
+else
+    echo "[✗] Verification failed - Checksum mismatch!"
+    echo "[!] Do not use this file. Please re-download."
+    exit 1
+fi
+```
+
+Make it executable and run:
+
+```bash
+chmod +x verify-blackweb.sh
+./verify-blackweb.sh
+```
+
+## Testing Blocked Domains
+
+After verification and deployment, test that blocking is working correctly.
+
+### Using cURL
+
+Test through your Squid proxy:
+
+```bash
+curl -x http://your-proxy:3128 -I http://example-blocked-domain.com
+```
+
+**Expected output for blocked domain:**
+```
+HTTP/1.1 403 Forbidden
+Server: squid
+```
+
+**Expected output for allowed domain:**
+```
+HTTP/1.1 200 OK
+```
+
+### Using Squid Logs
+
+Monitor real-time blocking:
+
+```bash
+sudo tail -f /var/log/squid/access.log | grep "TCP_DENIED"
+```
+
+You should see entries for denied requests:
+
+```
+1234567890.123 1 192.168.1.100 TCP_DENIED/403 3456 GET http://blocked-domain.com/ - HIER_NONE/- text/html
+```
+
+### Check Specific Domain
+
+Verify if a domain is in the blocklist:
+
+```bash
+grep -i "example.com" /etc/acl/blackweb.txt
+```
+
+If found, it will be blocked when accessed through Squid.
+
+## Troubleshooting
+
+<Accordion title="Checksum verification fails">
+  **Possible causes:**
+  
+  1. **Corrupted download**: Re-download the file
+  2. **Wrong file version**: Ensure you downloaded both files from the same release
+  3. **Modified file**: If you edited `blackweb.txt`, checksums will not match
+  
+  **Solution:**
+  ```bash
+  rm blackweb.txt blackweb.tar.gz blackweb.txt.sha256
+  wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz && cat blackweb.tar.gz* | tar xzf -
+  wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+  ```
+</Accordion>
+
+<Accordion title="sha256sum command not found">
+  Install the necessary package:
+  
+  **Ubuntu/Debian:**
+  ```bash
+  sudo apt-get install coreutils
+  ```
+  
+  **CentOS/RHEL:**
+  ```bash
+  sudo yum install coreutils
+  ```
+  
+  **macOS:**
+  ```bash
+  # Use shasum instead
+  shasum -a 256 blackweb.txt
+  ```
+</Accordion>
+
+<Accordion title="Domain should be blocked but isn't">
+  **Verification steps:**
+  
+  1. Confirm domain is in blocklist:
+     ```bash
+     grep -i "suspicious-domain.com" /etc/acl/blackweb.txt
+     ```
+  
+  2. Check Squid configuration:
+     ```bash
+     squid -k parse
+     ```
+  
+  3. Ensure Squid was reloaded:
+     ```bash
+     sudo systemctl reload squid
+     ```
+  
+  4. Verify client is using the proxy:
+     ```bash
+     curl -x http://proxy:3128 http://suspicious-domain.com
+     ```
+  
+  5. Check access logs:
+     ```bash
+     sudo tail -f /var/log/squid/access.log
+     ```
+</Accordion>
+
+## Best Practices
+
+<Note>
+**Always verify checksums** when:
+- Performing initial installation
+- Updating to a new BlackWeb release
+- Files are downloaded over untrusted networks
+- Implementing in production environments
+</Note>
+
+<Warning>
+If checksum verification fails, **never use the file**. A mismatched checksum could indicate:
+- Download corruption
+- Network tampering
+- Man-in-the-middle attack
+
+Always re-download from the official source.
+</Warning>
+
+## Next Steps
+
+After successful verification:
+
+1. **Deploy to production**: Move the verified file to `/etc/acl/blackweb.txt`
+2. **Configure Squid**: Follow the [Squid Configuration](/usage/squid-configuration) guide
+3. **Set up automation**: Consider automating updates with checksum verification
+4. **Monitor effectiveness**: Review Squid logs regularly to ensure proper blocking

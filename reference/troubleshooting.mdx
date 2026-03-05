@@ -1,0 +1,600 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues and solutions for BlackWeb'
+---
+
+This guide covers common issues you may encounter with BlackWeb and their solutions.
+
+## Installation Issues
+
+### Download Failures
+
+<AccordionGroup>
+  <Accordion title="Main file not available">
+    **Problem:** The main `blackweb.tar.gz` file fails to download.
+
+    **Solution:** Use the multipart download script:
+
+    ```bash
+    #!/bin/bash
+
+    # Variables
+    url="https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz"
+    wgetd="wget -q -c --timestamping --no-check-certificate --retry-connrefused --timeout=10 --tries=4 --show-progress"
+
+    # TMP folder
+    output_dir="bwtmp"
+    mkdir -p "$output_dir"
+
+    # Download
+    if $wgetd "$url"; then
+      echo "File downloaded: $(basename $url)"
+    else
+      echo "Main file not found. Searching for multiparts..."
+
+      # Multiparts from a to z
+      all_parts_downloaded=true
+      for part in {a..z}{a..z}; do
+        part_url="${url%.*}.$part"
+        if $wgetd "$part_url"; then
+          echo "Part downloaded: $(basename $part_url)"
+        else
+          echo "Part not found: $part"
+          all_parts_downloaded=false
+          break
+        fi
+      done
+
+      if $all_parts_downloaded; then
+        # Rebuild the original file in the current directory
+        cat blackweb.tar.gz.* > blackweb.tar.gz
+        echo "Multipart file rebuilt"
+      else
+        echo "Multipart process cannot be completed"
+        exit 1
+      fi
+    fi
+
+    # Unzip the file to the output folder
+    tar -xzf blackweb.tar.gz -C "$output_dir"
+
+    echo "Done"
+    ```
+  </Accordion>
+
+  <Accordion title="Checksum verification failed">
+    **Problem:** Downloaded file doesn't match the expected checksum.
+
+    **Solution:** Verify the file integrity:
+
+    ```bash
+    wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz && cat blackweb.tar.gz* | tar xzf -
+    wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+    LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+    REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+    echo "$LOCAL" && echo "$REMOTE"
+    [ "$LOCAL" = "$REMOTE" ] && echo OK || echo FAIL
+    ```
+
+    If checksum fails:
+    - Re-download the file
+    - Check your internet connection
+    - Verify disk space and integrity
+  </Accordion>
+
+  <Accordion title="Extraction errors">
+    **Problem:** Cannot extract `blackweb.tar.gz`.
+
+    **Solution:**
+
+    1. Check file integrity:
+       ```bash
+       file blackweb.tar.gz
+       ```
+
+    2. Verify tar is installed:
+       ```bash
+       which tar
+       ```
+
+    3. Try extraction with verbose output:
+       ```bash
+       tar -xzvf blackweb.tar.gz
+       ```
+
+    4. Check disk space:
+       ```bash
+       df -h
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Squid Configuration Issues
+
+### Squid Won't Start
+
+<AccordionGroup>
+  <Accordion title="Configuration errors">
+    **Problem:** Squid fails to start after adding BlackWeb rules.
+
+    **Solution:**
+
+    1. Check Squid configuration syntax:
+       ```bash
+       sudo squid -k parse
+       ```
+
+    2. View detailed error messages:
+       ```bash
+       sudo squid -k check
+       ```
+
+    3. Check Squid logs:
+       ```bash
+       sudo tail -f /var/log/squid/cache.log
+       ```
+
+    4. Verify file paths in `squid.conf` are correct
+
+    5. Ensure file permissions allow Squid to read:
+       ```bash
+       sudo chmod 644 /path_to/blackweb.txt
+       sudo chown proxy:proxy /path_to/blackweb.txt
+       ```
+  </Accordion>
+
+  <Accordion title="Cache directory errors">
+    **Problem:** `ERROR: Can't change type of existing cache_dir aufs /var/spool/squid to ufs. Restart required`
+
+    **Solution:**
+
+    If you use `aufs`, temporarily change it to `ufs` during the BlackWeb upgrade:
+
+    1. Edit `/etc/squid/squid.conf`:
+       ```bash
+       # Change from:
+       cache_dir aufs /var/spool/squid 100 16 256
+
+       # To:
+       cache_dir ufs /var/spool/squid 100 16 256
+       ```
+
+    2. Restart Squid:
+       ```bash
+       sudo systemctl restart squid
+       ```
+
+    3. After update completes, change back to `aufs` if desired
+  </Accordion>
+
+  <Accordion title="SquidErrors.txt contains domains">
+    **Problem:** After running BlackWeb, `SquidErrors.txt` contains blocked domains.
+
+    **Solution:**
+
+    1. Review the error file:
+       ```bash
+       cat /path/to/SquidErrors.txt
+       ```
+
+    2. Identify problematic domains
+
+    3. Add legitimate domains to `allowdomains.txt`:
+       ```bash
+       sudo nano /path_to/allowdomains.txt
+       ```
+
+    4. Reload Squid configuration:
+       ```bash
+       sudo squid -k reconfigure
+       ```
+  </Accordion>
+</AccordionGroup>
+
+### Squid Installation Problems
+
+<Accordion title="Squid not properly installed">
+  **Problem:** Squid is not installed or configured correctly.
+
+  **Solution:** Use this installation script:
+
+  ```bash
+  #!/bin/bash
+
+  # kill old version
+  while pgrep squid > /dev/null; do
+      echo "Waiting for Squid to stop..."
+      killall -s SIGTERM squid &>/dev/null
+      sleep 5
+  done
+
+  # squid remove (if exist)
+  apt purge -y squid* &>/dev/null
+  rm -rf /var/spool/squid* /var/log/squid* /etc/squid* /dev/shm/* &>/dev/null
+
+  # squid install (you can use 'squid-openssl' or 'squid')
+  apt install -y squid-openssl squid-langpack squid-common squidclient squid-purge
+
+  # create log
+  if [ ! -d /var/log/squid ]; then
+      mkdir -p /var/log/squid
+  fi &>/dev/null
+  if [[ ! -f /var/log/squid/{access,cache,store,deny}.log ]]; then
+      touch /var/log/squid/{access,cache,store,deny}.log
+  fi &>/dev/null
+
+  # permissions
+  chown -R proxy:proxy /var/log/squid
+
+  # enable service
+  systemctl enable squid.service
+  systemctl start squid.service
+  echo "Done"
+  ```
+</Accordion>
+
+## Update Process Issues
+
+### Update Script Failures
+
+<AccordionGroup>
+  <Accordion title="Missing dependencies">
+    **Problem:** Update script fails due to missing dependencies.
+
+    **Solution:** Install required packages:
+
+    ```bash
+    sudo apt update
+    sudo apt install -y wget git curl libnotify-bin perl tar rar unrar unzip zip gzip python-is-python3 idn2
+    ```
+
+    Required versions:
+    - Python 3.x
+    - Bash 5.x
+  </Accordion>
+
+  <Accordion title="Interrupted update process">
+    **Problem:** Update was interrupted with Ctrl+C.
+
+    **Solution:**
+
+    - If stopped during **DNS Lookup stage**: The script will resume from that point on the next run
+    - If stopped earlier: You must start from the beginning or manually modify the script
+
+    To resume:
+    ```bash
+    ./bwupdate.sh
+    ```
+  </Accordion>
+
+  <Accordion title="High resource consumption">
+    **Problem:** Update process consumes too much CPU/bandwidth.
+
+    **Solution:** Adjust the `PROCS` variable in `bwupdate.sh`:
+
+    ```bash
+    # Conservative (network-friendly)
+    PROCS=$(($(nproc)))
+
+    # Balanced
+    PROCS=$(($(nproc) * 2))
+
+    # Aggressive (default)
+    PROCS=$(($(nproc) * 4))
+
+    # Extreme (use with caution)
+    PROCS=$(($(nproc) * 8))
+    ```
+
+    Lower values reduce resource usage but increase processing time.
+  </Accordion>
+
+  <Accordion title="DNS lookup timeouts">
+    **Problem:** DNS lookups fail or timeout frequently.
+
+    **Solution:**
+
+    1. Reduce `PROCS` value to decrease concurrent DNS queries
+    2. Check DNS server configuration:
+       ```bash
+       cat /etc/resolv.conf
+       ```
+    3. Consider using faster DNS servers:
+       - Google: `8.8.8.8`, `8.8.4.4`
+       - Cloudflare: `1.1.1.1`, `1.0.0.1`
+    4. Check network connectivity:
+       ```bash
+       ping -c 4 8.8.8.8
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Issues
+
+### Slow Squid Performance
+
+<AccordionGroup>
+  <Accordion title="Large blocklist file">
+    **Problem:** Squid is slow due to the 4.7M+ domain blocklist.
+
+    **Solution:**
+
+    BlackWeb is optimized for Squid-Cache, but you can improve performance:
+
+    1. Increase Squid cache memory:
+       ```bash
+       # /etc/squid/squid.conf
+       cache_mem 256 MB
+       maximum_object_size_in_memory 512 KB
+       ```
+
+    2. Use SSD storage for Squid cache
+
+    3. Increase file descriptor limits:
+       ```bash
+       # /etc/squid/squid.conf
+       max_filedesc 4096
+       ```
+
+    4. Consider hardware upgrade if processing large volumes
+  </Accordion>
+
+  <Accordion title="Memory usage">
+    **Problem:** High memory consumption.
+
+    **Solution:**
+
+    1. Monitor memory usage:
+       ```bash
+       free -h
+       top -p $(pgrep squid)
+       ```
+
+    2. Adjust Squid memory settings:
+       ```bash
+       # /etc/squid/squid.conf
+       cache_mem 128 MB  # Reduce if needed
+       ```
+
+    3. Ensure adequate system RAM (recommended 4GB minimum)
+  </Accordion>
+</AccordionGroup>
+
+## Domain Blocking Issues
+
+### False Positives
+
+<AccordionGroup>
+  <Accordion title="Legitimate domain blocked">
+    **Problem:** A legitimate domain is being blocked by BlackWeb.
+
+    **Solution:**
+
+    1. Identify which source is blocking it:
+       ```bash
+       wget https://raw.githubusercontent.com/maravento/blackweb/refs/heads/master/bwupdate/tools/checksources.sh
+       chmod +x checksources.sh
+       ./checksources.sh
+       ```
+
+    2. Example output:
+       ```bash
+       [?] Enter domain to search: example.com
+
+       [*] Searching for 'example.com'...
+       [+] Domain found in: https://example-source.com/blocklist.txt
+       Done
+       ```
+
+    3. Contact the upstream source maintainer to request removal
+
+    4. Temporarily whitelist in `allowdomains.txt`:
+       ```bash
+       echo ".example.com" | sudo tee -a /path_to/allowdomains.txt
+       sudo squid -k reconfigure
+       ```
+  </Accordion>
+
+  <Accordion title="Google/Microsoft services broken">
+    **Problem:** Google Drive, Gmail, or Microsoft services aren't working.
+
+    **Solution:** Add these domains to `allowdomains.txt`:
+
+    ```text
+    .accounts.google.com
+    .accounts.youtube.com
+    .googleapis.com
+    .google.com
+    .gstatic.com
+    .microsoft.com
+    .microsoftonline.com
+    .live.com
+    .office365.com
+    .outlook.com
+    ```
+
+    Then reload Squid:
+    ```bash
+    sudo squid -k reconfigure
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Domains Not Being Blocked
+
+<AccordionGroup>
+  <Accordion title="Expected domain not blocked">
+    **Problem:** A domain you expect to be blocked isn't.
+
+    **Solution:**
+
+    1. Check if domain is in BlackWeb:
+       ```bash
+       grep "example.com" /path_to/blackweb.txt
+       ```
+
+    2. Check Squid ACL order in `/etc/squid/squid.conf`:
+       - Ensure `allowdomains` doesn't include it
+       - Verify BlackWeb ACL is loaded
+       - Check rule order (allow rules before deny rules)
+
+    3. Add to custom blocklist:
+       ```bash
+       echo ".example.com" | sudo tee -a /path_to/blockdomains.txt
+       sudo squid -k reconfigure
+       ```
+
+    4. Clear browser cache and test
+  </Accordion>
+
+  <Accordion title="HTTPS sites bypassing block">
+    **Problem:** HTTPS sites aren't being blocked.
+
+    **Solution:**
+
+    BlackWeb blocks domains at the DNS/domain level. For HTTPS:
+
+    1. Configure SSL bumping in Squid (advanced)
+    2. Use `ssl_bump` directives
+    3. Install CA certificate on client machines
+
+    See [Squid SSL Bump documentation](http://wiki.squid-cache.org/Features/SslBump) for details.
+  </Accordion>
+</AccordionGroup>
+
+## Log Analysis
+
+### Understanding Squid Logs
+
+<Accordion title="Checking blocked requests">
+  **Location:** `/var/log/squid/access.log`
+
+  **View recent denials:**
+  ```bash
+  sudo tail -f /var/log/squid/access.log | grep TCP_DENIED
+  ```
+
+  **Count blocked domains:**
+  ```bash
+  sudo grep TCP_DENIED /var/log/squid/access.log | awk '{print $7}' | sort | uniq -c | sort -rn | head -20
+  ```
+
+  **Find blocks for specific domain:**
+  ```bash
+  sudo grep "example.com" /var/log/squid/access.log
+  ```
+</Accordion>
+
+<Accordion title="Monitoring cache log">
+  **Location:** `/var/log/squid/cache.log`
+
+  **Watch for errors:**
+  ```bash
+  sudo tail -f /var/log/squid/cache.log
+  ```
+
+  **Check recent errors:**
+  ```bash
+  sudo grep ERROR /var/log/squid/cache.log | tail -20
+  ```
+</Accordion>
+
+## File Permission Issues
+
+<Accordion title="Permission denied errors">
+  **Problem:** Squid can't read BlackWeb files.
+
+  **Solution:**
+
+  1. Set correct ownership:
+     ```bash
+     sudo chown proxy:proxy /path_to/blackweb.txt
+     sudo chown proxy:proxy /path_to/allowdomains.txt
+     sudo chown proxy:proxy /path_to/blockdomains.txt
+     sudo chown proxy:proxy /path_to/blocktlds.txt
+     ```
+
+  2. Set correct permissions:
+     ```bash
+     sudo chmod 644 /path_to/*.txt
+     ```
+
+  3. Verify:
+     ```bash
+     ls -la /path_to/
+     ```
+
+  Expected output:
+  ```text
+  -rw-r--r-- 1 proxy proxy 124567890 Jan 01 12:00 blackweb.txt
+  ```
+</Accordion>
+
+## Platform-Specific Issues
+
+<Warning>
+BlackWeb is designed exclusively for Squid-Cache. Due to the large number of blocked domains (4.7M+), it is **NOT recommended** for:
+
+- DNSMasq
+- Pi-Hole
+- Windows Hosts file
+- Other DNS-based blockers
+
+Using BlackWeb in these environments may cause system slowdown or crashes. For more information, see [Issue #10](https://github.com/maravento/blackweb/issues/10#issuecomment-650834301).
+</Warning>
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/maravento/blackweb/issues">
+    Report bugs or request features
+  </Card>
+  
+  <Card title="Check Syslog" icon="file-lines">
+    Monitor update completion:
+    ```bash
+    grep "BlackWeb: Done" /var/log/syslog
+    ```
+    Expected output:
+    ```text
+    BlackWeb: Done 06/05/2023 15:47:14
+    ```
+  </Card>
+</CardGroup>
+
+<Tip>
+Before reporting issues, check `/var/log/syslog` and `/var/log/squid/cache.log` for error messages. Include these logs when requesting help.
+</Tip>
+
+## Emergency Recovery
+
+<Accordion title="Restore Squid to working state">
+  If BlackWeb causes critical issues:
+
+  1. **Disable BlackWeb temporarily:**
+     ```bash
+     sudo nano /etc/squid/squid.conf
+     ```
+     Comment out BlackWeb lines:
+     ```bash
+     # acl blackweb dstdomain "/path_to/blackweb.txt"
+     # http_access deny blackweb
+     ```
+
+  2. **Reload Squid:**
+     ```bash
+     sudo squid -k reconfigure
+     ```
+
+  3. **Restore from backup:**
+     ```bash
+     sudo cp /etc/squid/squid.conf.bak /etc/squid/squid.conf
+     sudo systemctl restart squid
+     ```
+
+  4. **Test basic Squid:**
+     ```bash
+     sudo squid -k parse
+     sudo systemctl status squid
+     ```
+</Accordion>

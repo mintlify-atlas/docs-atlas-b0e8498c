@@ -1,0 +1,137 @@
+---
+title: Introduction
+description: Learn about BlackWeb, a comprehensive domain blocklist aggregator for Squid-Cache proxy servers
+---
+
+BlackWeb is a project that collects and unifies public blocklists of domains (porn, downloads, drugs, malware, spyware, trackers, bots, social networks, warez, weapons, etc.) to make them compatible with [Squid-Cache](http://www.squid-cache.org/).
+
+## What is BlackWeb?
+
+BlackWeb aggregates and consolidates hundreds of public blocklists from trusted sources worldwide, creating a unified, optimized blocklist specifically formatted for Squid-Cache proxy servers. This allows network administrators to easily implement comprehensive web filtering across their infrastructure.
+
+<Note>
+  **BlackWeb is NOT a blacklist service itself**. It does not independently verify domains. Its purpose is to consolidate and reformat public blacklist sources to make them compatible with Squid-Cache.
+</Note>
+
+## Key Statistics
+
+| ACL | Blocked Domains | File Size |
+| :---: | :---: | :---: |
+| blackweb.txt | **4,772,375** | **118.8 MB** |
+
+The blocklist is continuously updated and optimized to provide maximum protection while minimizing false positives.
+
+## What Does BlackWeb Block?
+
+BlackWeb consolidates blocklists targeting various categories of unwanted content:
+
+- **Malware & Phishing**: Malicious domains, phishing sites, and fraud attempts
+- **Trackers & Spyware**: Advertising trackers, analytics, and surveillance software
+- **Adult Content**: Pornography and explicit material
+- **Social Networks**: Optional blocking of social media platforms
+- **Downloads & Warez**: Piracy and illegal download sites
+- **Drugs & Weapons**: Illegal marketplaces and related content
+- **Cryptocurrency Mining**: Browser-based cryptominers
+- **Spam & Bots**: Known spam domains and bot networks
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Massive Coverage" icon="shield-check">
+    Nearly 4.8 million blocked domains from over 100 curated public sources
+  </Card>
+  <Card title="Squid-Optimized" icon="gauge-high">
+    Pre-formatted for Squid-Cache with optimized domain structure
+  </Card>
+  <Card title="Regular Updates" icon="arrows-rotate">
+    Automated update process with DNS validation and debugging
+  </Card>
+  <Card title="False Positive Filtering" icon="filter">
+    Built-in allowlists for essential services (Google, Yahoo, GitHub, etc.)
+  </Card>
+</CardGroup>
+
+## How It Works
+
+BlackWeb follows a comprehensive processing pipeline:
+
+1. **Collection**: Downloads blocklists from 100+ public sources
+2. **Extraction**: Captures domains using regex pattern matching
+3. **Normalization**: Converts to Squid-Cache format (`.domain.com`)
+4. **Deduplication**: Removes overlapping subdomains (`.sub.example.com` is removed if `.example.com` exists)
+5. **TLD Validation**: Verifies domains have valid top-level domains
+6. **Punycode Processing**: Converts international domains to ASCII-compatible format
+7. **DNS Lookup**: Validates that domains actually exist (two-step verification)
+8. **Filtering**: Removes government domains (.gov, .mil) and allowlisted entries
+9. **Optimization**: Final sorting and compression
+
+## Source Transparency
+
+BlackWeb aggregates data from over 100 trusted public sources, including:
+
+- **Malware Intelligence**: abuse.ch, OpenPhish, CriticalPathSecurity, cert.pl
+- **Ad & Tracker Lists**: EasyList, AdGuard, Disconnect.me, Steven Black
+- **Security Researchers**: Mitchell Krogza, hagezi, Firebog
+- **Academic Sources**: Université Toulouse 1 Capitole
+- **Community Projects**: Pi-hole, Ultimate Hosts Blacklist, hBlock
+
+<Accordion title="View Full Source List">
+  See the complete list of sources in the [README.md SOURCES section](https://github.com/maravento/blackweb#sources).
+</Accordion>
+
+## Important Considerations
+
+<Warning>
+  Due to the large number of blocked domains (4.7M+), BlackWeb is designed **exclusively for Squid-Cache**. It is **not recommended** for use with DNSMasq, Pi-Hole, or Windows Hosts files, as it could slow down or crash these systems.
+</Warning>
+
+### Domain Removal Requests
+
+If your domain appears in BlackWeb and you believe this is an error:
+
+1. BlackWeb consolidates public sources and does not independently blacklist domains
+2. Use the `checksources.sh` tool to identify which upstream source(s) list your domain
+3. Contact the maintainer of that source list to request removal
+4. Once removed from the upstream source, it will automatically disappear from BlackWeb in the next update
+
+```bash
+wget https://raw.githubusercontent.com/maravento/blackweb/refs/heads/master/bwupdate/tools/checksources.sh
+chmod +x checksources.sh
+./checksources.sh
+```
+
+## Use Cases
+
+BlackWeb is ideal for:
+
+- **Corporate Networks**: Enforce acceptable use policies and protect against malware
+- **Educational Institutions**: Filter inappropriate content and prevent malware infections
+- **ISPs**: Provide customer protection and reduce malicious traffic
+- **Home Networks**: Protect family members from harmful content
+- **Research**: Analyze malicious domain patterns and DGA detection
+
+## Community Recognition
+
+BlackWeb is referenced and used by:
+
+- Wikipedia - [Blacklist (computing)](https://en.wikipedia.org/wiki/Blacklist_(computing))
+- OSINT Framework - Domain Blacklists section
+- Zeltser - Free Blocklists of Suspected Malicious IPs and URLs
+- Secrepo - Samples of Security Related Data
+- Multiple security research papers and blog posts
+
+## Getting Started
+
+Ready to implement BlackWeb? Continue to the [Quick Start Guide](/quickstart) to download and configure BlackWeb in minutes.
+
+For detailed installation instructions including dependencies and advanced configuration, see the [Installation Guide](/installation).
+
+## License
+
+BlackWeb is licensed under:
+- [![GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl.txt)
+- [![CC BY-NC-ND 4.0](https://img.shields.io/badge/License-CC_BY--NC--ND_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-nd/4.0/deed.en)
+
+## Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.

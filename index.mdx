@@ -1,97 +1,213 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "BlackWeb Documentation"
+description: "Domain blocklist aggregator for Squid-Cache proxy servers"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-b from-[#0f1117] via-[#1a1d27] to-[#0f1117] dark:from-[#0f1117] dark:via-[#1a1d27] dark:to-[#0f1117] py-20 sm:py-24 lg:py-28">
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(64,144,226,0.1),transparent_50%)]"></div>
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(46,125,50,0.08),transparent_50%)]"></div>
+  
+  <div className="relative max-w-7xl mx-auto px-6 sm:px-8">
+    <div className="flex flex-col lg:flex-row lg:items-center lg:gap-12">
+      <div className="flex-1 text-center lg:text-left">
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-100 dark:text-gray-100 mb-6">
+          Enterprise-Grade Domain Blocklist for Squid-Cache
+        </h1>
+        <p className="text-lg sm:text-xl text-gray-400 dark:text-gray-400 max-w-2xl mx-auto lg:mx-0 mb-8">
+          Protect your network with 4.7M+ verified blocked domains. BlackWeb aggregates and optimizes public blocklists to filter porn, malware, trackers, ransomware, and other malicious content.
+        </p>
+        <div className="flex flex-wrap gap-4 justify-center lg:justify-start">
+          <a
+            href="/quickstart"
+            className="inline-flex items-center px-6 py-3 rounded-lg bg-[#4a90e2] hover:bg-[#3a7bc8] text-white font-semibold transition-colors"
+          >
+            Get Started
+            <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a
+            href="/usage/squid-configuration"
+            className="inline-flex items-center px-6 py-3 rounded-lg border border-white/30 bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+          >
+            View Configuration
+          </a>
+        </div>
+      </div>
+      
+      <div className="hidden lg:block flex-1 mt-12 lg:mt-0">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-[#4a90e2]/20 to-[#2e7d32]/20 blur-3xl"></div>
+          <div className="relative bg-[#1a1d27] dark:bg-[#1a1d27] border border-[#27272a] dark:border-[#27272a] rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <pre className="text-sm text-gray-300 dark:text-gray-300 overflow-x-auto">
+              <code>{`# BlackWeb Squid Configuration
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
 
-Get your documentation site up and running in minutes.
+# Blocked: 4,772,375 domains
+# File size: 118.8 MB
+# Last updated: $(date)`}</code>
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Quick Start</h2>
+    <p className="text-base text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Get BlackWeb running in your Squid-Cache proxy in minutes
+    </p>
+  </div>
 
-## Make it yours
+  <Steps>
+    <Step title="Download BlackWeb">
+      Download and extract the latest blocklist from the GitHub repository.
+      
+      ```bash
+      wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz
+      cat blackweb.tar.gz* | tar xzf -
+      ```
+      
+      This downloads the compressed blocklist containing 4.7M+ verified domains.
+    </Step>
 
-Design a docs site that looks great and empowers your users.
+    <Step title="Configure Squid-Cache">
+      Add the BlackWeb ACL to your Squid configuration file.
+      
+      ```bash
+      # Edit /etc/squid/squid.conf
+      acl blackweb dstdomain "/path_to/blackweb.txt"
+      http_access deny blackweb
+      ```
+      
+      Replace `/path_to/` with the actual path where you extracted blackweb.txt.
+    </Step>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+    <Step title="Restart Squid">
+      Reload Squid to apply the new configuration.
+      
+      ```bash
+      sudo systemctl restart squid
+      ```
+      
+      <Note>
+        Check `/var/log/squid/access.log` to verify that blocked domains are being denied.
+      </Note>
+    </Step>
 
-## Create beautiful pages
+    <Step title="Verify the Configuration">
+      Test that the blocklist is working correctly.
+      
+      ```bash
+      # Check file integrity
+      wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+      LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+      REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+      [ "$LOCAL" = "$REMOTE" ] && echo "OK" || echo "FAIL"
+      ```
+    </Step>
+  </Steps>
+</div>
 
-Everything you need to create world-class documentation.
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Key Features</h2>
+    <p className="text-base text-gray-600 dark:text-gray-400">
+      Enterprise-grade domain filtering for Squid-Cache proxy servers
+    </p>
+  </div>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+  <CardGroup cols={3}>
+    <Card title="4.7M+ Domains" icon="shield-halved">
+      Aggregates and verifies over 4.7 million blocked domains from 100+ public blocklists, covering porn, malware, trackers, ransomware, and more.
+    </Card>
+    <Card title="DNS Validation" icon="check-circle">
+      Every domain is validated via DNS lookup to ensure accuracy. Invalid and non-existent domains are automatically excluded.
+    </Card>
+    <Card title="TLD Verification" icon="globe">
+      Validates against official TLD lists (ccTLD, gTLD, sTLD) to prevent false positives and ensure only legitimate domain structures are blocked.
+    </Card>
+    <Card title="Punycode Support" icon="lock">
+      Converts international domain names (IDN) to Punycode format to prevent homograph attacks and phishing attempts.
+    </Card>
+    <Card title="Advanced Filtering" icon="filter">
+      Supports allow/block lists, TLD blocking, pattern matching, and streaming domain filters for fine-grained control.
+    </Card>
+    <Card title="Automated Updates" icon="rotate">
+      Update script with parallel DNS lookups automatically refreshes the blocklist from upstream sources and validates entries.
+    </Card>
+  </CardGroup>
+</div>
 
-## Need inspiration?
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">Explore the Documentation</h2>
+    <p className="text-base text-gray-600 dark:text-gray-400">
+      Everything you need to deploy and manage BlackWeb
+    </p>
+  </div>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+  <CardGroup cols={2}>
+    <Card title="Installation" icon="download" href="/installation">
+      Step-by-step installation guide for BlackWeb and Squid-Cache dependencies.
+    </Card>
+    <Card title="Squid Configuration" icon="gear" href="/usage/squid-configuration">
+      Configure Squid-Cache ACLs and rules to use BlackWeb effectively.
+    </Card>
+    <Card title="Advanced Rules" icon="sliders" href="/usage/advanced-rules">
+      Allow/block lists, TLD filtering, Punycode blocking, and pattern matching.
+    </Card>
+    <Card title="Update Process" icon="arrows-rotate" href="/update/overview">
+      Learn how to update BlackWeb with the automated update script.
+    </Card>
+    <Card title="Blocklist Sources" icon="list" href="/reference/sources">
+      Browse the 100+ public blocklists that power BlackWeb.
+    </Card>
+    <Card title="Troubleshooting" icon="wrench" href="/reference/troubleshooting">
+      Resolve common issues and debug Squid configuration errors.
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="bg-gradient-to-r from-[#4a90e2]/10 to-[#2e7d32]/10 dark:from-[#4a90e2]/10 dark:to-[#2e7d32]/10 border border-[#27272a] dark:border-[#27272a] rounded-2xl p-8 sm:p-12 text-center">
+    <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Ready to secure your network?
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
+      Deploy BlackWeb in your Squid-Cache proxy and start blocking malicious domains immediately.
+    </p>
+    <div className="flex flex-wrap gap-4 justify-center">
+      <a
+        href="/quickstart"
+        className="inline-flex items-center px-6 py-3 rounded-lg bg-[#4a90e2] hover:bg-[#3a7bc8] text-white font-semibold transition-colors"
+      >
+        Get Started Now
+        <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+        </svg>
+      </a>
+      <a
+        href="https://github.com/maravento/blackweb"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 dark:border-[#27272a] bg-white dark:bg-[#1a1d27] hover:bg-gray-50 dark:hover:bg-[#242838] text-gray-900 dark:text-white font-semibold transition-colors"
+      >
+        <svg className="mr-2 w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+        </svg>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</div>

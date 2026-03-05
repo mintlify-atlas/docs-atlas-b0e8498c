@@ -1,0 +1,169 @@
+---
+title: Squid-Cache Configuration
+description: Configure Squid-Cache to use the BlackWeb ACL for blocking unwanted domains
+---
+
+Once you've downloaded BlackWeb, configure Squid-Cache to use it for domain blocking.
+
+## Basic Configuration
+
+Edit your Squid configuration file:
+
+```bash
+/etc/squid/squid.conf
+```
+
+Add the following lines to implement the BlackWeb blocking rule:
+
+```bash squid.conf
+# INSERT YOUR OWN RULE(S) HERE TO ALLOW ACCESS FROM YOUR CLIENTS
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/path_to/blackweb.txt"
+http_access deny blackweb
+```
+
+<Warning>
+Replace `/path_to/blackweb.txt` with the actual path where you extracted the BlackWeb file. The default recommended path is `/etc/acl/blackweb.txt`.
+</Warning>
+
+## Configuration Steps
+
+<Steps>
+  <Step title="Locate Configuration File">
+    Open `/etc/squid/squid.conf` in your preferred text editor with root privileges:
+    
+    ```bash
+    sudo nano /etc/squid/squid.conf
+    ```
+  </Step>
+  
+  <Step title="Add ACL Definition">
+    Define the BlackWeb ACL by specifying the path to the blocklist file:
+    
+    ```bash
+    acl blackweb dstdomain "/etc/acl/blackweb.txt"
+    ```
+    
+    This creates an Access Control List named `blackweb` that matches destination domains from the file.
+  </Step>
+  
+  <Step title="Add Deny Rule">
+    Add the HTTP access deny rule immediately after the ACL definition:
+    
+    ```bash
+    http_access deny blackweb
+    ```
+  </Step>
+  
+  <Step title="Restart Squid">
+    Apply the configuration changes by restarting Squid:
+    
+    ```bash
+    sudo systemctl restart squid
+    ```
+    
+    Or for older systems:
+    
+    ```bash
+    sudo service squid restart
+    ```
+  </Step>
+  
+  <Step title="Verify Configuration">
+    Check that Squid started successfully:
+    
+    ```bash
+    sudo systemctl status squid
+    ```
+    
+    Look for any error messages in the logs:
+    
+    ```bash
+    sudo tail -f /var/log/squid/cache.log
+    ```
+  </Step>
+</Steps>
+
+## Understanding the Configuration
+
+### ACL Syntax
+
+```bash
+acl <name> dstdomain "<file_path>"
+```
+
+- **acl**: Defines an Access Control List
+- **blackweb**: The name of this ACL (can be customized)
+- **dstdomain**: Matches destination domain names
+- **"/path_to/blackweb.txt"**: Path to the domain list file
+
+### HTTP Access Rule
+
+```bash
+http_access deny blackweb
+```
+
+- **http_access**: Controls access to web resources
+- **deny**: Blocks matching requests
+- **blackweb**: References the ACL defined above
+
+## Rule Placement
+
+<Note>
+**Important**: The order of rules in `squid.conf` matters! Place your BlackWeb rules after any `http_access allow` rules for your clients, but before the final `http_access deny all` rule.
+</Note>
+
+Correct order:
+
+```bash
+# 1. Allow access from your clients
+http_access allow localnet
+
+# 2. Block BlackWeb domains
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+
+# 3. Deny everything else (default rule)
+http_access deny all
+```
+
+## Testing the Configuration
+
+After applying the configuration, test that blocked domains are properly denied:
+
+```bash
+# Try accessing a domain that should be blocked
+curl -x http://your-proxy:3128 http://example-blocked-domain.com
+```
+
+You should see an access denied error from Squid.
+
+## Advanced Configuration
+
+For more sophisticated filtering with allowlists, TLD blocking, and pattern matching, see the [Advanced Rules](/usage/advanced-rules) guide.
+
+## Troubleshooting
+
+<Accordion title="Squid won't start after adding BlackWeb">
+  Check the following:
+  - Verify the file path is correct and the file exists
+  - Ensure the file has proper permissions (readable by the Squid user)
+  - Check syntax with: `squid -k parse`
+  - Review error logs: `tail /var/log/squid/cache.log`
+</Accordion>
+
+<Accordion title="Domains aren't being blocked">
+  Verify:
+  - Rule placement (should be before `http_access deny all`)
+  - The domain exists in `blackweb.txt`
+  - Squid was restarted after configuration changes
+  - Client is actually using the proxy
+</Accordion>
+
+<Accordion title="Squid is slow after adding BlackWeb">
+  BlackWeb contains over 4.7 million domains, which may impact performance on systems with limited resources. Consider:
+  - Increasing Squid's memory allocation
+  - Using SSD storage for Squid cache
+  - Implementing [advanced rules](/usage/advanced-rules) to reduce false positives
+</Accordion>

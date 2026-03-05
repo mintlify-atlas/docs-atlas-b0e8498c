@@ -1,0 +1,504 @@
+---
+title: 'Configuration Files'
+description: 'Reference guide for BlackWeb configuration files'
+---
+
+BlackWeb includes several configuration files that allow you to customize blocking behavior, whitelist essential domains, and fine-tune your Squid-Cache setup.
+
+## Core Configuration Files
+
+### allowdomains.txt
+
+Use this file to exclude essential domains or subdomains from blocking. This is critical for services that might be incorrectly flagged.
+
+**Location:** `/path_to/allowdomains.txt`
+
+**Purpose:** Whitelist domains that should never be blocked, even if they appear in BlackWeb.
+
+**Example content:**
+
+```text
+.accounts.youtube.com
+```
+
+<Note>
+According to [Squid's documentation](http://wiki.squid-cache.org/ConfigExamples/Streams/YouTube), subdomains like `accounts.google.com` and `accounts.youtube.com` may be used by Google for authentication. Blocking them could disrupt Gmail, Drive, Docs, and other services.
+</Note>
+
+**Squid Configuration:**
+
+```bash
+acl allowdomains dstdomain "/path_to/allowdomains.txt"
+http_access allow allowdomains
+```
+
+<Warning>
+Place the `allowdomains` rule BEFORE the BlackWeb block rule to ensure whitelisted domains are accessible.
+</Warning>
+
+**Common domains to whitelist:**
+
+- `.accounts.google.com`
+- `.accounts.youtube.com`
+- `.yahoo.com`
+- `.github.com`
+- `.microsoft.com`
+- `.live.com`
+- `.office365.com`
+
+### blockdomains.txt
+
+Use this file to block additional domains not included in `blackweb.txt`.
+
+**Location:** `/path_to/blockdomains.txt`
+
+**Purpose:** Add custom domains to block that aren't in the main BlackWeb list.
+
+**Example content:**
+
+```text
+.put-any-domain-here.com
+# example
+.mega.co.nz
+.mega.io
+.mega.nz
+```
+
+**Squid Configuration:**
+
+```bash
+acl blockdomains dstdomain "/path_to/blockdomains.txt"
+http_access deny blockdomains
+```
+
+<Tip>
+Use this file for organization-specific blocking policies or local requirements not covered by public blocklists.
+</Tip>
+
+### blocktlds.txt
+
+Use this file to block entire top-level domains (TLDs) including gTLD, sTLD, and ccTLD.
+
+**Location:** `/path_to/blocktlds.txt`
+
+**Purpose:** Block all domains under specific TLDs known for spam, phishing, or malicious content.
+
+**Example content:**
+
+```text
+## GENERIC TOP LEVEL DOMAIN (gTLD)
+# Spam & Malicious TLDs by Cloudflare
+# https://blog.cloudflare.com/top-level-domains-email-phishing-threats
+.accountant
+.autos
+.bar
+.beauty
+.best
+.bet
+.bid
+.bio
+.boats
+.buzz
+.cam
+.center
+.cf
+.cfd
+.christmas
+.click
+.country
+.cricket
+.cyou
+.date
+.directory
+.ee
+.faith
+.fun
+.ga
+.gdn
+.gq
+.hair
+.homes
+.host
+.icu
+.info
+.ink
+.ir
+.kim
+.lat
+.life
+.link
+.live
+.lol
+.ltd
+.makeup
+.men
+.ml
+.mobi
+.mom
+.monster
+.ninja
+.one
+.online
+.party
+.pics
+.pro
+.pw
+.racing
+.realtor
+.rest
+.review
+.sbs
+.science
+.services
+.shop
+.site
+.skin
+.space
+.stream
+.tattoo
+.tk
+.today
+.top
+.uno
+.wang
+.wf
+.wiki
+.win
+.work
+.world
+.xyz
+.yachts
+.zip
+
+# TLDs Abused (Based on Reputation Block Lists RBLs)
+.adult
+.beer
+.bingo
+.camera
+.cash
+.casino
+.channel
+.chat
+.cheap
+.club
+.download
+.entertainment
+.fan
+.fm
+.game
+.games
+.guru
+.lotto
+.market
+.marketing
+.markets
+.media
+.meet
+.meme
+.money
+.mov
+.movie
+.music
+.photo
+.photos
+.pictures
+.play
+.poker
+.porn
+.promo
+.pub
+.radio
+.rocks
+.sex
+.sexy
+.social
+.song
+.store
+.tube
+.tv
+.video
+.vodka
+.watch
+.webcam
+.wtf
+.xxx
+
+## COUNTRY CODE TOP LEVEL DOMAIN (ccTLD) (Optional)
+# Financial Action Task Force FATF-GAFI / OFAC's Sanctions List
+# https://www.fatf-gafi.org/en/countries/black-and-grey-lists.html
+#.by
+#.cn
+#.cu
+#.et
+#.iq
+#.kp
+#.lb
+#.ly
+#.ni
+#.rf
+#.ru
+#.ss
+#.su
+#.sy
+#.ye
+#.zw
+```
+
+**Squid Configuration:**
+
+```bash
+acl blocktlds dstdomain "/path_to/blocktlds.txt"
+http_access deny blocktlds
+```
+
+<Accordion title="Example: Blocking .xxx TLD">
+Input domains:
+
+```text
+.bardomain.xxx
+.subdomain.bardomain.xxx
+.bardomain.ru
+.bardomain.adult
+.foodomain.com
+.foodomain.porn
+```
+
+With `.xxx`, `.adult`, `.porn`, and `.ru` in `blocktlds.txt`, output:
+
+```text
+.foodomain.com
+```
+
+All domains with blocked TLDs are automatically denied.
+</Accordion>
+
+<Warning>
+Blocking country-code TLDs (ccTLDs) like `.ru` or `.cn` may block legitimate websites. Use with caution and uncomment only if required by your security policy.
+</Warning>
+
+### streaming.txt
+
+Use this file to block streaming domains not included in `blackweb.txt`.
+
+**Location:** `/path_to/streaming.txt`
+
+**Purpose:** Block video streaming services like YouTube, Facebook Video, TikTok, Netflix, etc.
+
+**Example content (first 20 lines):**
+
+```text
+.a1.googlevideo.com
+.accounts.spotify.com
+.accounts.youtube.com
+.acorn.tv
+.admin.youtube.com
+.ads.youtube.com
+.aha.video
+.apiblog.youtube.com
+.apresolve.spotify.com
+.atresplayer.com
+.atv-ps.primevideo.com
+.au.youtube.com
+.boomplay.com
+.britbox.com
+.cache1.c.youtube.com
+.cache2.c.youtube.com
+.cache3.c.youtube.com
+.cache4.c.youtube.com
+.cache5.c.youtube.com
+.cache6.c.youtube.com
+```
+
+<Note>
+The `streaming.txt` file contains 1,426 streaming-related domains including YouTube, Netflix, Spotify, TikTok, Facebook Video, and many others.
+</Note>
+
+**Squid Configuration:**
+
+```bash
+acl streaming dstdomain "/path_to/streaming.txt"
+http_access deny streaming
+```
+
+<Warning>
+This list may contain overlapping domains. Manual cleaning is recommended based on your goals:
+
+- **To block Facebook entirely:** Keep primary domains (`.facebook.com`, `.fbcdn.net`), remove specific subdomains
+- **To block only Facebook streaming:** Keep specific subdomains (`.z-p3-video.flpb1-1.fna.fbcdn.net`), remove primary domains
+
+Example:
+
+```bash
+# Block Facebook completely
+.fbcdn.net
+.facebook.com
+
+# Block only Facebook streaming content
+.z-p3-video.flpb1-1.fna.fbcdn.net
+```
+</Warning>
+
+### debugwl.txt
+
+Internal whitelist used during the BlackWeb update process to exclude false positives.
+
+**Location:** `bwupdate/lst/debugwl.txt`
+
+**Purpose:** Prevents essential domains from being added to BlackWeb during the update process.
+
+**Partial content (first 50 lines):**
+
+```text
+# GOOGLE
+.056f281f3e53769c0731e4d2166c15d4.safeframe.googlesyndication.com
+.060984a5de860fcd166c9828fe8d7187.safeframe.googlesyndication.com
+.0790e2b927bd192fcb2bdaf74755eca4.safeframe.googlesyndication.com
+.0a87aa25e6aff7a4fa2e8d793487ce22.safeframe.googlesyndication.com
+.0.blogger.gmodules.com
+.0.client-channel.google.com
+.0d0e939d09c7401702860d99a6a2192d.safeframe.googlesyndication.com
+.0.docs.google.com
+.0.drive.google.com
+.accounts.google.com
+.google.com
+.googleapis.com
+.microsoft.com
+.live.com
+.yahoo.com
+.hotmail.com
+```
+
+<Tip>
+This file is used internally by the update script. Regular users don't need to modify it.
+</Tip>
+
+## Punycode Blocking
+
+Block Punycode domains to prevent IDN homograph attacks.
+
+**Squid Configuration:**
+
+```bash
+acl punycode dstdom_regex -i \.xn--.*
+http_access deny punycode
+```
+
+**Example:**
+
+Input domains:
+```text
+.bücher.com
+.mañana.com
+.google.com
+.auth.wikimedia.org
+.xn--fiqz9s
+.xn--p1ai
+```
+
+ASCII output (allowed):
+```text
+.google.com
+.auth.wikimedia.org
+```
+
+Blocked (Punycode):
+```text
+.xn--fiqz9s
+.xn--p1ai
+```
+
+<Accordion title="Why block Punycode?">
+Punycode domains starting with `xn--` represent non-ASCII characters. Attackers use them for [homograph attacks](https://www.welivesecurity.com/2017/07/27/homograph-attacks-see-to-believe/) where visually similar characters create fake domains:
+
+- Real: `google.com`
+- Fake: `gооgle.com` (Cyrillic 'o') → becomes `xn--ggle-55da.com`
+
+Blocking all `xn--` domains prevents these attacks but may also block legitimate international domains.
+</Accordion>
+
+## Complete Squid Configuration Example
+
+Here's the recommended order for all BlackWeb rules:
+
+```bash
+# INSERT YOUR OWN RULE(S) HERE TO ALLOW ACCESS FROM YOUR CLIENTS
+
+# Allow Rule for Domains
+acl allowdomains dstdomain "/path_to/allowdomains.txt"
+http_access allow allowdomains
+
+# Block Rule for Punycode
+acl punycode dstdom_regex -i \.xn--.*
+http_access deny punycode
+
+# Block Rule for gTLD, sTLD, ccTLD
+acl blocktlds dstdomain "/path_to/blocktlds.txt"
+http_access deny blocktlds
+
+# Block Rule for Domains
+acl blockdomains dstdomain "/path_to/blockdomains.txt"
+http_access deny blockdomains
+
+# Block Rule for Patterns (Optional)
+# https://raw.githubusercontent.com/maravento/vault/refs/heads/master/blackshield/acl/squid/blockpatterns.txt
+acl blockwords url_regex -i "/path_to/blockpatterns.txt"
+http_access deny blockwords
+
+# Block Rule for web3 (Optional)
+# https://raw.githubusercontent.com/maravento/vault/refs/heads/master/blackshield/acl/web3/web3domains.txt
+acl web3 dstdomain "/path_to/web3domains.txt"
+http_access deny web3
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/path_to/blackweb.txt"
+http_access deny blackweb
+```
+
+<Warning>
+Rule order matters! Squid processes ACLs top-to-bottom. Always place `allowdomains` first to ensure whitelisted domains aren't blocked by later rules.
+</Warning>
+
+## File Locations
+
+Default file structure:
+
+```text
+/etc/acl/
+├── allowdomains.txt
+├── blockdomains.txt
+├── blocktlds.txt
+├── streaming.txt
+└── blackweb.txt
+```
+
+<Tip>
+You can change the default path from `/etc/acl` to any location you prefer. Update all Squid configuration references accordingly.
+</Tip>
+
+## Maintenance Tips
+
+<AccordionGroup>
+  <Accordion title="Regular Updates">
+    Update your configuration files regularly:
+    - Add new essential domains to `allowdomains.txt`
+    - Review and update `blockdomains.txt` for organization-specific needs
+    - Check `blocktlds.txt` as new malicious TLDs emerge
+  </Accordion>
+
+  <Accordion title="Testing Changes">
+    After modifying configuration files:
+    ```bash
+    sudo squid -k reconfigure
+    sudo squid -k check
+    ```
+    Check `/var/log/squid/cache.log` for errors.
+  </Accordion>
+
+  <Accordion title="Backup Configuration">
+    Always backup your custom configuration files before updates:
+    ```bash
+    sudo cp /etc/acl/allowdomains.txt /etc/acl/allowdomains.txt.bak
+    sudo cp /etc/acl/blockdomains.txt /etc/acl/blockdomains.txt.bak
+    ```
+  </Accordion>
+</AccordionGroup>

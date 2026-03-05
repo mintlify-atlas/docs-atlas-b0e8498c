@@ -1,0 +1,105 @@
+---
+title: Downloading BlackWeb
+description: Learn how to download the BlackWeb blocklist, including multipart handling for large files
+---
+
+The `blackweb.txt` file is already updated and optimized for Squid-Cache. Download it and unzip it in the path of your preference, then activate the Squid-Cache rule.
+
+## Quick Download
+
+For a simple download and extraction:
+
+```bash
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz && cat blackweb.tar.gz* | tar xzf -
+```
+
+This command will:
+- Download the compressed BlackWeb archive
+- Handle any multipart files automatically
+- Extract the contents to the current directory
+
+## Handling Multipart Downloads
+
+Due to the large size of BlackWeb (currently **118.8 MB** with over **4.7 million domains**), the file may be split into multiple parts. Use the following script to handle both single and multipart downloads:
+
+```bash
+#!/bin/bash
+
+# Variables
+url="https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz"
+wgetd="wget -q -c --timestamping --no-check-certificate --retry-connrefused --timeout=10 --tries=4 --show-progress"
+
+# TMP folder
+output_dir="bwtmp"
+mkdir -p "$output_dir"
+
+# Download
+if $wgetd "$url"; then
+  echo "File downloaded: $(basename $url)"
+else
+  echo "Main file not found. Searching for multiparts..."
+
+  # Multiparts from a to z
+  all_parts_downloaded=true
+  for part in {a..z}{a..z}; do
+    part_url="${url%.*}.$part"
+    if $wgetd "$part_url"; then
+      echo "Part downloaded: $(basename $part_url)"
+    else
+      echo "Part not found: $part"
+      all_parts_downloaded=false
+      break
+    fi
+  done
+
+  if $all_parts_downloaded; then
+    # Rebuild the original file in the current directory
+    cat blackweb.tar.gz.* > blackweb.tar.gz
+    echo "Multipart file rebuilt"
+  else
+    echo "Multipart process cannot be completed"
+    exit 1
+  fi
+fi
+
+# Unzip the file to the output folder
+tar -xzf blackweb.tar.gz -C "$output_dir"
+
+echo "Done"
+```
+
+### How the Script Works
+
+<Steps>
+  <Step title="Define Variables">
+    Sets the download URL and wget options for reliable downloads with retry logic
+  </Step>
+  
+  <Step title="Create Temporary Directory">
+    Creates a `bwtmp` folder to store the extracted files
+  </Step>
+  
+  <Step title="Attempt Single File Download">
+    First tries to download the complete archive as a single file
+  </Step>
+  
+  <Step title="Fall Back to Multipart">
+    If the single file isn't available, automatically searches for multipart files (`.aa`, `.ab`, `.ac`, etc.)
+  </Step>
+  
+  <Step title="Rebuild and Extract">
+    Concatenates all parts into the original archive and extracts it to the output directory
+  </Step>
+</Steps>
+
+<Note>
+The multipart download feature is especially useful for users with network limitations or when GitHub's file size restrictions require splitting large files.
+</Note>
+
+## Next Steps
+
+After downloading BlackWeb:
+
+1. Verify the file integrity using [checksum verification](/usage/verification)
+2. Configure Squid-Cache to use the blocklist in [Squid Configuration](/usage/squid-configuration)
+3. Explore [advanced filtering rules](/usage/advanced-rules) for fine-tuned control

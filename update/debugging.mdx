@@ -1,0 +1,478 @@
+---
+title: "Domain Debugging"
+description: "Domain validation, TLD checking, Punycode conversion, and non-ASCII cleanup processes"
+---
+
+## Overview
+
+Domain debugging is a multi-stage process that cleans, validates, and normalizes domains from public blocklists before DNS validation. This ensures the final BlackWeb list contains only properly formatted, valid domains.
+
+## Domains Debugging
+
+The primary debugging step removes overlapping domains and performs homologation to Squid-Cache format.
+
+### The Problem: Redundant Domains
+
+Public blocklists often contain redundant entries:
+
+```
+com
+.com
+.domain.com
+domain.com
+0.0.0.0 domain.com
+127.0.0.1 domain.com
+::1 domain.com
+domain.com.co
+foo.bar.subdomain.domain.com
+.subdomain.domain.com.co
+www.domain.com
+www.foo.bar.subdomain.domain.com
+domain.co.uk
+xxx.foo.bar.subdomain.domain.co.uk
+```
+
+### The Solution: Squid-Cache Format
+
+BlackWeb uses Squid's efficient domain matching format:
+
+```
+.domain.com
+.domain.com.co
+.domain.co.uk
+```
+
+**How it works:**
+- `.domain.com` blocks `domain.com` AND all subdomains (`*.domain.com`)
+- Removes redundant subdomain entries
+- Strips IP address prefixes (`0.0.0.0`, `127.0.0.1`, `::1`)
+- Removes `www.` prefixes
+- Excludes invalid TLDs like `.com` alone
+
+### Implementation
+
+```bash bwupdate/bwupdate.sh
+# DEBUGGING DOMAINS
+echo "${bw07[$lang]}"
+grep -Fvxf urls.txt capture.txt | sed 's/[^[:print:]\n]//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk '{if ($1 !~ /^\./) print "." $1; else print $1}' | sort -u > cleancapture.txt
+$wgetd https://raw.githubusercontent.com/maravento/vault/master/dofi/domfilter.py -O domfilter.py >/dev/null 2>&1
+python domfilter.py --input cleancapture.txt
+grep -Fvxf urls.txt output.txt | grep -P "^[\x00-\x7F]+$" | sort -u > finalclean
+echo "OK"
+```
+
+The process:
+1. Removes allowlisted domains (`urls.txt`)
+2. Strips non-printable characters
+3. Trims whitespace
+4. Adds leading dot if missing
+5. Runs Python domain filter (`domfilter.py`)
+6. Ensures ASCII-only output
+
+### Allowlist Integration
+
+BlackWeb excludes false positives using `debugwl.txt`:
+
+- **Google services**: gmail.com, youtube.com, etc.
+- **Microsoft services**: hotmail.com, outlook.com, etc.
+- **Yahoo services**: yahoo.com, mail.yahoo.com, etc.
+- **University domains**: From world university database
+- **Essential services**: Banking, government, education sites
+
+## TLD Validation
+
+Removes domains with invalid Top-Level Domains using a comprehensive list of public and private suffix TLDs.
+
+### TLD Types Supported
+
+| TLD Type | Description | Examples |
+|----------|-------------|----------|
+| **ccTLD** | Country Code TLD | .us, .uk, .de, .jp |
+| **ccSLD** | Country Code Second-Level Domain | .co.uk, .com.au |
+| **sTLD** | Sponsored TLD | .gov, .edu, .mil |
+| **uTLD** | Unsponsored TLD | .int, .arpa |
+| **gSLD** | Generic Second-Level Domain | .com.co, .net.au |
+| **gTLD** | Generic TLD | .com, .net, .org |
+| **eTLD** | Effective TLD | .blogspot.com |
+| **4LD** | Fourth-Level Domain | .edu.co.uk |
+
+### Input Example
+
+```
+.domain.exe
+.domain.com
+.domain.edu.co
+```
+
+### Output Example
+
+```
+.domain.com
+.domain.edu.co
+```
+
+**Note**: `.exe` is not a valid TLD and gets removed.
+
+### Implementation
+
+```bash bwupdate/bwupdate.sh
+# TLD FINAL FILTER (Exclude AllowTLDs .gov, .mil, etc., delete TLDs and NO-ASCII lines
+echo "${bw11[$lang]}"
+regex_ext=$(grep -v '^#' lst/allowtlds.txt | sed 's/$/\$/' | tr '\n' '|')
+new_regex_ext="${regex_ext%|}"
+grep -E -v "$new_regex_ext" blackweb_tmp | sort -u > blackweb_tmp2
+comm -23 <(sort blackweb_tmp2) <(sort tlds.txt) > blackweb.txt
+```
+
+This process:
+1. Loads allowed TLDs from `lst/allowtlds.txt`
+2. Creates regex pattern for exclusion
+3. Filters out government TLDs (.gov, .mil, etc.)
+4. Removes standalone TLDs (using `tlds.txt`)
+5. Produces clean final list
+
+### Government TLD Exclusion
+
+BlackWeb specifically excludes government-related domains:
+
+#### Input
+
+```
+.argentina.gob.ar
+.mydomain.com
+.gob.mx
+.gov.uk
+.navy.mil
+```
+
+#### Output
+
+```
+.mydomain.com
+```
+
+**Rationale**: Government domains should not be blocked to avoid breaking essential services and official websites.
+
+## Debugging Punycode-IDN
+
+Converts internationalized domain names (IDN) to Punycode/IDNA format for proper handling of non-ASCII characters.
+
+### What is Punycode?
+
+Punycode is an encoding system that represents Unicode characters in ASCII, prefixed with `xn--`.
+
+**Why needed?**
+- DNS only supports ASCII characters
+- International domains use Unicode (Cyrillic, Arabic, Chinese, etc.)
+- Homograph attacks use lookalike characters (e.g., Cyrillic 'а' vs Latin 'a')
+
+### RFC 1035 Compliance
+
+Removes hostnames exceeding 63 characters:
+
+```bash bwupdate/bwupdate.sh
+# RFC 1035 Partial
+sed '/[^.]\{64\}/d' stage1 \
+| grep -vP '[A-Z]' \
+| grep -vP '(^|\.)-|-($|\.)' \
+| sed 's/^\.//g' \
+| sort -u > stage2
+```
+
+Filters:
+- Hostnames > 63 characters (RFC 1035 limit)
+- Uppercase letters (should be lowercase)
+- Hyphens at start/end of labels
+
+### IDN Conversion Process
+
+```bash bwupdate/bwupdate.sh
+# DEBUGGING IDN
+{ 
+  LC_ALL=C grep -v '[^[:print:]]' stage2
+  grep -P "[^[:ascii:]]" stage2 | idn2 
+} | grep -P '^[\x00-\x7F]+$' \
+  | awk '{if ($1 !~ /^\./) print "." $1; else print $1}' \
+  | sort -u > capture.txt
+```
+
+Process:
+1. Extract printable ASCII domains (no conversion needed)
+2. Extract non-ASCII domains
+3. Convert non-ASCII to Punycode using `idn2` tool
+4. Verify output is ASCII-only
+5. Ensure leading dot format
+
+### Input Example
+
+```
+bücher.com
+café.fr
+españa.com
+köln-düsseldorfer-rhein-main.de
+mañana.com
+mūsųlaikas.lt
+sendesık.com
+президент.рф
+```
+
+### Output Example
+
+```
+xn--bcher-kva.com
+xn--caf-dma.fr
+xn--d1abbgf6aiiy.xn--p1ai
+xn--espaa-rta.com
+xn--kln-dsseldorfer-rhein-main-cvc6o.de
+xn--maana-pta.com
+xn--mslaikas-qzb5f.lt
+xn--sendesk-wfb.com
+```
+
+**Note**: The Cyrillic domain `президент.рф` becomes `xn--d1abbgf6aiiy.xn--p1ai`
+
+### Character Mapping Examples
+
+| Original | Character | Punycode | Full Domain |
+|----------|-----------|----------|-------------|
+| German | ü | bcher-kva | xn--bcher-kva.com |
+| French | é | caf-dma | xn--caf-dma.fr |
+| Spanish | ñ | espaa-rta | xn--espaa-rta.com |
+| Turkish | ı | sendesk-wfb | xn--sendesk-wfb.com |
+| Lithuanian | ų | mslaikas-qzb5f | xn--mslaikas-qzb5f.lt |
+| Cyrillic | президент | d1abbgf6aiiy | xn--d1abbgf6aiiy.xn--p1ai |
+
+## Debugging non-ASCII Characters
+
+The final cleanup removes corrupted entries, invalid encoding, and ensures strict ASCII compliance.
+
+### The Problem: Encoding Corruption
+
+Public blocklists may contain:
+- **Corrupted UTF-8**: Incomplete or broken multi-byte sequences
+- **CP1252**: Windows-1252 encoding mixed with UTF-8
+- **ISO-8859-1**: Latin-1 encoding
+- **Non-printable characters**: Control characters, null bytes
+- **Invalid homograph attacks**: Malformed lookalike characters
+
+### Input Example (Corrupted Encoding)
+
+```
+M-C$
+-$
+.$
+0$
+1$
+23andmÃª.com
+.Ã²utlook.com
+.ÄƒlibÄƒbÄƒ.com
+.ÄƒmÄƒzon.com
+.ÄƒvÄƒst.com
+.amÃ¹azon.com
+.amÉ™zon.com
+.avalÃ³n.com
+.bÄºnance.com
+.bitdáº¹fender.com
+.blÃ³ckchain.site
+.blockchaiÇ¹.com
+.cashpluÈ™.com
+.dáº¹ll.com
+.diÃ³cesisdebarinas.org
+.disnáº¹ylandparis.com
+.ebÄƒy.com
+.É™mÉ™zon.com
+.evo-bancÃ³.com
+.goglÄ™.com
+.gooÄŸle.com
+.googÄ¼Ä™.com
+.googlÉ™.com
+.google.com
+.ibáº¹ria.com
+.imgÃºr.com
+.lloydÅŸbank.com
+.mÃ½etherwallet.com
+.mrgreÄ™n.com
+.myáº¹tháº¹rwallet.com
+.myáº¹thernwallet.com
+.myetháº¹rnwallet.com
+.myetheá¹™wallet.com
+.myethernwalláº¹t.com
+.nÄ™tflix.com
+.paxfÃ¹ll.com
+.tÃ¼rkiyeisbankasi.com
+.tÅ™ezor.com
+.westernÃºnion.com
+.yÃ²utube.com
+.yÄƒhoo.com
+.yoÃ¼tÃ¼be.co
+.yoÃ¼tÃ¼be.com
+.yoÃ¼tu.be
+```
+
+### Output Example (Clean)
+
+```
+.google.com
+```
+
+**Only valid ASCII domains survive!**
+
+### What Happened?
+
+- **Homograph attacks removed**: `ÄƒmÄƒzon.com`, `googlÉ™.com`, etc.
+- **Corrupted encoding removed**: `23andmÃª.com`, `Ã²utlook.com`, etc.
+- **Invalid characters removed**: `M-C$`, `-$`, `.$`, etc.
+- **Legitimate domain preserved**: `google.com`
+
+### Implementation
+
+```bash bwupdate/bwupdate.sh
+iconv -f "$(file -bi final.txt | sed 's/.*charset=//')" -t UTF-8//IGNORE final.txt | grep -P '^[\x00-\x7F]+$' > blackweb.txt
+```
+
+Process:
+1. Detect current character encoding with `file -bi`
+2. Convert to UTF-8 with `iconv`, ignoring invalid sequences
+3. Filter to ASCII-only characters (`\x00-\x7F`)
+4. Save as `blackweb.txt`
+
+### Earlier Stage Cleaning
+
+```bash bwupdate/bwupdate.sh
+# CAPTURING DOMAINS
+find bwtmp -type f -not -iname "*pdf" \
+  -execdir grep -oiE "([a-zA-Z0-9][a-zA-Z0-9-]{1,61}\.){1,}(\.?[a-zA-Z]{2,}){1,}" {} \; \
+| sed -r 's:(^\.*.?(www|ftp|ftps|ftpes|sftp|pop|pop3|smtp|imap|http|https)[^.]*?\.|^\.\.?)::gi' \
+| sed -r '/[^a-zA-Z0-9.-]/d; /^[^a-zA-Z0-9.]/d; /[^a-zA-Z0-9]$/d; /^[[:space:]]*$/d; /[[:space:]]/d; /^[[:space:]]*#/d; /\.{2,}/d' \
+| sort -u > stage1
+```
+
+Regex filters:
+- `/[^a-zA-Z0-9.-]/d` - Remove lines with invalid characters
+- `/^[^a-zA-Z0-9.]/d` - Remove lines starting with invalid chars
+- `/[^a-zA-Z0-9]$/d` - Remove lines ending with invalid chars
+- `/^[[:space:]]*$/d` - Remove empty lines
+- `/[[:space:]]/d` - Remove lines with whitespace
+- `/^[[:space:]]*#/d` - Remove comments
+- `/\.{2,}/d` - Remove consecutive dots
+
+### Protocol Prefix Removal
+
+```bash
+sed -r 's:(^\.*.?(www|ftp|ftps|ftpes|sftp|pop|pop3|smtp|imap|http|https)[^.]*?\.|^\.\.?)::gi'
+```
+
+Removes common prefixes:
+- `www.example.com` → `example.com`
+- `ftp.example.com` → `example.com`
+- `http.example.com` → `example.com`
+- `smtp.example.com` → `example.com`
+
+<Note>
+  These are subdomain removals, not protocol stripping. The domain `www.example.com` becomes `example.com`, then gets prefixed with `.` for Squid format: `.example.com`
+</Note>
+
+## Security: Homograph Attack Protection
+
+Homograph attacks use lookalike characters to mimic legitimate domains:
+
+### Examples of Homograph Attacks
+
+| Fake Domain | Target | Attack Character |
+|-------------|--------|------------------|
+| .ÄƒmÄƒzon.com | amazon.com | Latin Small Letter A with Breve (Ä) |
+| .googlÉ™.com | google.com | Latin Small Letter Schwa (É™) |
+| .Ã²utlook.com | outlook.com | Latin Small Letter O with Grave (Ã²) |
+| .nÄ™tflix.com | netflix.com | Latin Small Letter E with Ogonek (Ä™) |
+| .yÄƒhoo.com | yahoo.com | Latin Small Letter A with Breve (Ä) |
+
+### Visual Similarity
+
+To the human eye:
+- `ÄƒmÄƒzon` looks like `amazon`
+- `googlÉ™` looks like `google`
+- `nÄ™tflix` looks like `netflix`
+
+But in ASCII/DNS:
+- They're completely different domains
+- Used for phishing attacks
+- Can bypass simple blocklists
+
+### BlackWeb Protection
+
+BlackWeb handles homographs two ways:
+
+1. **Valid IDN**: Convert to Punycode
+   - `café.fr` → `xn--caf-dma.fr` (legitimate)
+
+2. **Corrupted/Attack**: Remove entirely
+   - `ÄƒmÄƒzon.com` → **REMOVED** (phishing)
+
+## Character Set Normalization
+
+Final conversion ensures `charset=us-ascii`:
+
+```bash bwupdate/bwupdate.sh
+iconv -f "$(file -bi final.txt | sed 's/.*charset=//')" -t UTF-8//IGNORE final.txt | grep -P '^[\x00-\x7F]+$' > blackweb.txt
+```
+
+**Result**: Clean, standardized list ready for:
+- DNS resolution
+- Domain comparison
+- Squid-Cache integration
+- No encoding issues
+- No corrupted entries
+
+## Summary of Debugging Stages
+
+<Steps>
+  <Step title="Domain Debugging">
+    Remove overlapping domains, convert to Squid format, apply allowlist
+  </Step>
+
+  <Step title="TLD Validation">
+    Verify against comprehensive TLD database (ccTLD, gTLD, etc.)
+  </Step>
+
+  <Step title="RFC 1035 Compliance">
+    Remove hostnames > 63 characters, invalid hyphen placement
+  </Step>
+
+  <Step title="Punycode Conversion">
+    Convert internationalized domains to ASCII-compatible encoding
+  </Step>
+
+  <Step title="Non-ASCII Cleanup">
+    Remove corrupted encoding, homograph attacks, invalid characters
+  </Step>
+
+  <Step title="Character Set Normalization">
+    Ensure final output is pure US-ASCII
+  </Step>
+</Steps>
+
+## Why This Matters
+
+<CardGroup cols={2}>
+  <Card title="Performance" icon="gauge-high">
+    Clean, optimized domain list means faster Squid lookups and less memory usage
+  </Card>
+
+  <Card title="Accuracy" icon="bullseye">
+    Removes false positives (legitimate sites) and invalid entries (dead domains)
+  </Card>
+
+  <Card title="Security" icon="shield">
+    Detects and blocks homograph phishing attacks and IDN spoofing
+  </Card>
+
+  <Card title="Compatibility" icon="check">
+    Ensures domains work correctly with DNS, Squid, and all ASCII-based systems
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Card title="Back to Overview" icon="arrow-left" href="/update/overview">
+  Return to the Update Process overview
+</Card>

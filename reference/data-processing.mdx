@@ -1,0 +1,318 @@
+---
+title: 'Data Processing Pipeline'
+description: 'How BlackWeb processes and validates millions of domains'
+---
+
+BlackWeb uses a sophisticated multi-stage data processing pipeline to download, clean, validate, and optimize domain blocklists from over 100 sources. This ensures the final `blackweb.txt` file is accurate, deduplicated, and optimized for Squid-Cache.
+
+<Warning>
+This process can consume significant hardware resources and bandwidth. It's recommended to use test equipment if you need to run the update process yourself.
+</Warning>
+
+## Processing Stages
+
+The update process consists of several sequential stages:
+
+### 1. Capture Public Blocklists
+
+The first stage downloads domains from all public blocklists and unifies them into a single file.
+
+```bash
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/bwupdate/bwupdate.sh
+chmod +x bwupdate.sh
+./bwupdate.sh
+```
+
+See [Blocklist Sources](/reference/sources) for the complete list of downloaded sources.
+
+### 2. Domains Debugging
+
+Removes overlapping domains and performs homologation to Squid-Cache format. Excludes false positives using the allowlist (`debugwl.txt`).
+
+**Input:**
+
+```text
+com
+.com
+.domain.com
+domain.com
+0.0.0.0 domain.com
+127.0.0.1 domain.com
+::1 domain.com
+domain.com.co
+foo.bar.subdomain.domain.com
+.subdomain.domain.com.co
+www.domain.com
+www.foo.bar.subdomain.domain.com
+domain.co.uk
+xxx.foo.bar.subdomain.domain.co.uk
+```
+
+**Output:**
+
+```text
+.domain.com
+.domain.com.co
+.domain.co.uk
+```
+
+<Accordion title="How subdomain deduplication works">
+BlackWeb removes redundant subdomains because Squid-Cache matches all subdomains when a parent domain is blocked. For example:
+
+- `.domain.com` blocks `www.domain.com`, `api.domain.com`, `mail.domain.com`, etc.
+- Therefore, listing both `.domain.com` and `.subdomain.domain.com` is redundant
+- Only `.domain.com` is kept to minimize file size
+</Accordion>
+
+### 3. TLD Validation
+
+Removes domains with invalid TLDs using a comprehensive list of Public and Private Suffix TLDs including:
+
+- ccTLD (Country Code Top-Level Domains)
+- ccSLD (Country Code Second-Level Domains)
+- sTLD (Sponsored Top-Level Domains)
+- uTLD (Unsponsored Top-Level Domains)
+- gSLD (Generic Second-Level Domains)
+- gTLD (Generic Top-Level Domains)
+- eTLD (Effective Top-Level Domains)
+- Up to 4th level domains (4LDs)
+
+**Input:**
+
+```text
+.domain.exe
+.domain.com
+.domain.edu.co
+```
+
+**Output:**
+
+```text
+.domain.com
+.domain.edu.co
+```
+
+<Note>
+The `.exe` TLD is invalid and removed. Only domains with valid, registered TLDs are kept.
+</Note>
+
+### 4. Debugging Punycode-IDN
+
+Converts international domain names (IDN) to Punycode/IDNA format and removes invalid entries:
+
+- Removes hostnames larger than 63 characters (RFC 1035)
+- Removes characters inadmissible by IDN standards
+- Converts non-ASCII domains to Punycode format
+
+**Input:**
+
+```text
+bücher.com
+café.fr
+españa.com
+köln-düsseldorfer-rhein-main.de
+mañana.com
+mūsųlaikas.lt
+sendesık.com
+президент.рф
+```
+
+**Output:**
+
+```text
+xn--bcher-kva.com
+xn--caf-dma.fr
+xn--d1abbgf6aiiy.xn--p1ai
+xn--espaa-rta.com
+xn--kln-dsseldorfer-rhein-main-cvc6o.de
+xn--maana-pta.com
+xn--mslaikas-qzb5f.lt
+xn--sendesk-wfb.com
+```
+
+<Accordion title="What is Punycode?">
+Punycode is a way to represent Unicode characters in ASCII for domain names. It helps prevent [IDN homograph attacks](https://en.wikipedia.org/wiki/IDN_homograph_attack) where attackers use visually similar characters from different alphabets to create fake domains.
+
+For example:
+- `google.com` (ASCII)
+- `gооgle.com` (Cyrillic 'o' characters) → `xn--ggle-0nda.com`
+
+Blocking Punycode domains starting with `xn--` can prevent these attacks.
+</Accordion>
+
+### 5. Debugging non-ASCII Characters
+
+Removes entries with:
+
+- Invalid encoding
+- Non-printable characters
+- Whitespace
+- Disallowed symbols
+- Corrupted UTF-8, CP1252, ISO-8859-1 encoding
+
+Converts output to plain text with `charset=us-ascii` for a clean, standardized list.
+
+**Input:**
+
+```text
+M-C$
+-$
+.$
+0$
+1$
+23andmÃª.com
+.Ã²utlook.com
+.ÄƒlibÄƒbÄƒ.com
+.ÄƒmÄƒzon.com
+.ÄƒvÄƒst.com
+.amÃ¹azon.com
+.amÉ™zon.com
+.avalÃ³n.com
+.bÄºnance.com
+.bitdáº¹fender.com
+.blÃ³ckchain.site
+.blockchaiÇ¹.com
+.google.com
+```
+
+**Output:**
+
+```text
+.google.com
+```
+
+<Warning>
+This stage removes thousands of malicious domains with corrupted encoding often used in phishing attacks.
+</Warning>
+
+### 6. DNS Lookup
+
+Most public sources contain millions of invalid or nonexistent domains. Each domain is verified via DNS lookup in 2 steps to exclude nonexistent entries.
+
+**Performance Configuration:**
+
+You can control DNS lookup concurrency with the `PROCS` variable:
+
+```bash
+PROCS=$(($(nproc)))        # Conservative (network-friendly)
+PROCS=$(($(nproc) * 2))    # Balanced
+PROCS=$(($(nproc) * 4))    # Aggressive (default)
+PROCS=$(($(nproc) * 8))    # Extreme (use with caution)
+```
+
+**Example on Core i5 (4 cores / 8 threads):**
+
+```bash
+nproc             → 8
+PROCS=$((8 * 4))  → 32 parallel queries
+```
+
+<Warning>
+High `PROCS` values increase DNS resolution speed but may saturate your CPU or bandwidth, especially on limited networks like satellite links. Adjust accordingly.
+</Warning>
+
+**Real-time processing example:**
+
+```bash
+Processed: 2463489 / 7244989 (34.00%)
+```
+
+**Output examples:**
+
+```bash
+HIT google.com
+google.com has address 142.251.35.238
+google.com has IPv6 address 2607:f8b0:4008:80b::200e
+google.com mail is handled by 10 smtp.google.com.
+
+FAULT testfaultdomain.com
+Host testfaultdomain.com not found: 3(NXDOMAIN)
+```
+
+<Tip>
+Domains that return `NXDOMAIN` or fail DNS lookup are automatically excluded from the final list.
+</Tip>
+
+### 7. Exclude Government TLDs
+
+Removes government domains (.gov) and other related TLDs from BlackWeb to avoid blocking official government services.
+
+**Input:**
+
+```text
+.argentina.gob.ar
+.mydomain.com
+.gob.mx
+.gov.uk
+.navy.mil
+```
+
+**Output:**
+
+```text
+.mydomain.com
+```
+
+### 8. Run Squid-Cache with BlackWeb
+
+The final stage tests the blocklist with Squid-Cache. Any errors are sent to `SquidErrors.txt` for review.
+
+```bash
+sudo squid -k reconfigure 2> "$SCRIPT_DIR/SquidErrors.txt"
+```
+
+## Processing Timeline
+
+Check `/var/log/syslog` for completion:
+
+```bash
+BlackWeb: Done 06/05/2023 15:47:14
+```
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="CPU Usage">
+    The DNS lookup stage is CPU-intensive due to parallel processing. Monitor CPU temperature and adjust `PROCS` if needed.
+  </Accordion>
+
+  <Accordion title="Memory Usage">
+    Processing 7+ million domains requires adequate RAM. Recommended minimum: 4GB RAM.
+  </Accordion>
+
+  <Accordion title="Network Bandwidth">
+    - Downloading 100+ blocklists: ~500MB-1GB
+    - DNS lookups: Millions of queries
+    - Consider bandwidth caps on metered connections
+  </Accordion>
+
+  <Accordion title="Disk I/O">
+    Temporary files can consume several GB during processing. Ensure adequate disk space in `/tmp` and working directories.
+  </Accordion>
+</AccordionGroup>
+
+## Resuming Interrupted Updates
+
+<Note>
+If you interrupt the update process with Ctrl+C during the DNS Lookup stage, the script will resume from that point on the next run. If interrupted earlier, you'll need to start from the beginning or modify the script manually.
+</Note>
+
+## Default Path
+
+The default installation path for BlackWeb is `/etc/acl`. You can change this to your preferred location.
+
+## Dependencies
+
+The update process requires:
+
+- Python 3.x
+- Bash 5.x
+- System packages: `wget`, `git`, `curl`, `libnotify-bin`, `perl`, `tar`, `rar`, `unrar`, `unzip`, `zip`, `gzip`, `python-is-python3`, `idn2`, `iconv`
+
+```bash
+sudo apt install wget git curl libnotify-bin perl tar rar unrar unzip zip gzip python-is-python3 idn2
+```
+
+<Tip>
+Make sure all dependencies are installed before running the update script to avoid interruptions.
+</Tip>

@@ -1,0 +1,365 @@
+---
+title: "DNS Lookup Process"
+description: "Two-step parallel DNS validation with resource management"
+---
+
+## Overview
+
+The DNS lookup phase is the **most resource-intensive** part of the BlackWeb update process. It validates millions of domains through actual DNS queries to exclude nonexistent or invalid domains from the final blocklist.
+
+<Warning>
+  **High Resource Consumption!** This process uses parallel DNS queries that can saturate CPU and network bandwidth, especially on limited connections like satellite links.
+</Warning>
+
+## Why DNS Validation?
+
+Many public blocklist sources contain:
+- Expired domains
+- Nonexistent domains (typos in original lists)
+- Domains that never existed
+- Domains that have been taken down
+
+By validating each domain via DNS, BlackWeb ensures only **active, resolvable domains** are blocked, reducing false positives and improving performance.
+
+## Two-Step Validation Process
+
+The script performs DNS lookup in **two steps** with different timeout values:
+
+### Step 1: Initial Lookup (1-second timeout)
+
+```bash bwupdate/bwupdate.sh
+# STEP 1:
+if [ ! -e "$bwupdate"/dnslookup1 ]; then
+    echo "${bw08[$lang]}"
+    sed 's/^\.//g' finalclean | sort -u > step1
+    total=$(wc -l < step1)
+    (
+        while sleep 1; do
+            processed=$(wc -l < dnslookup1 2>/dev/null)
+            percent=$(awk -v p="$processed" -v t="$total" 'BEGIN { if (t > 0) printf "%.2f", (p/t)*100; else print 100 }')
+            printf "Processed: %d / %d (%s%%)\r" "$processed" "$total" "$percent"
+        done
+    ) &
+    progress_pid=$!
+    if [ -s dnslookup1 ]; then
+        awk 'FNR==NR {seen[$2]=1;next} seen[$1]!=1' dnslookup1 step1
+    else
+        cat step1
+    fi | xargs -I {} -P "$PROCS" sh -c "if host -W 1 {} >/dev/null; then echo HIT {}; else echo FAULT {}; fi" >> dnslookup1
+    kill "$progress_pid" 2>/dev/null
+    echo
+    sed '/^FAULT/d' dnslookup1 | awk '{print $2}' | awk '{print "." $1}' | sort -u > hit.txt
+    sed '/^HIT/d' dnslookup1 | awk '{print $2}' | awk '{print "." $1}' | sort -u >> fault.txt
+    sort -o fault.txt -u fault.txt
+    echo "OK"
+fi
+```
+
+**Key Features:**
+- Uses `host -W 1` (1-second timeout)
+- Marks domains as `HIT` (resolved) or `FAULT` (failed)
+- Runs in parallel using `xargs -P $PROCS`
+- Real-time progress display
+- Resumes from checkpoint if interrupted
+
+### Step 2: Retry Failed Domains (2-second timeout)
+
+```bash bwupdate/bwupdate.sh
+sleep 10
+
+# STEP 2:
+echo "${bw09[$lang]}"
+sed 's/^\.//g' fault.txt | sort -u > step2
+total=$(wc -l < step2)
+(
+    while sleep 1; do
+        processed=$(wc -l < dnslookup2 2>/dev/null)
+        percent=$(awk -v p="$processed" -v t="$total" 'BEGIN { if (t > 0) printf "%.2f", (p/t)*100; else print 100 }')
+        printf "Processed: %d / %d (%s%%)\r" "$processed" "$total" "$percent"
+    done
+) &
+progress_pid=$!
+if [ -s dnslookup2 ]; then
+    awk 'FNR==NR {seen[$2]=1;next} seen[$1]!=1' dnslookup2 step2
+else
+    cat step2
+fi | xargs -I {} -P "$PROCS" sh -c "if host -W 2 {} >/dev/null; then echo HIT {}; else echo FAULT {}; fi" >> dnslookup2
+kill "$progress_pid" 2>/dev/null
+echo
+sed '/^FAULT/d' dnslookup2 | awk '{print $2}' | awk '{print "." $1}' | sort -u >> hit.txt
+sed '/^HIT/d' dnslookup2 | awk '{print $2}' | awk '{print "." $1}' | sort -u > fault.txt
+echo "OK"
+```
+
+**Why Two Steps?**
+1. **First pass (1s timeout)**: Quickly filters out obviously dead domains
+2. **10-second pause**: Prevents overwhelming DNS infrastructure
+3. **Second pass (2s timeout)**: Gives slower-responding domains a second chance
+
+## Parallel Processing Configuration
+
+The number of parallel DNS queries is controlled by the `PROCS` variable:
+
+```bash bwupdate/bwupdate.sh
+PROCS=$(($(nproc) * 4))
+```
+
+### Understanding PROCS
+
+The formula is:
+
+```
+PROCS = Number of Logical CPUs × Multiplier
+```
+
+### Recommended Settings
+
+<Tabs>
+  <Tab title="Conservative">
+    ```bash
+    PROCS=$(($(nproc)))        # Network-friendly
+    ```
+    Best for:
+    - Limited bandwidth connections
+    - Satellite or metered internet
+    - Shared DNS servers
+    - Low-power systems
+  </Tab>
+
+  <Tab title="Balanced">
+    ```bash
+    PROCS=$(($(nproc) * 2))    # Balanced approach
+    ```
+    Best for:
+    - Standard broadband connections
+    - Typical home/office setups
+    - General use cases
+  </Tab>
+
+  <Tab title="Aggressive (Default)">
+    ```bash
+    PROCS=$(($(nproc) * 4))    # Fast but intensive
+    ```
+    Best for:
+    - High-bandwidth connections
+    - Dedicated servers
+    - Powerful CPUs
+    - Local DNS caching
+  </Tab>
+
+  <Tab title="Extreme">
+    ```bash
+    PROCS=$(($(nproc) * 8))    # Maximum speed, use with caution
+    ```
+    Best for:
+    - Data center environments
+    - Very high bandwidth
+    - Dedicated hardware
+    
+    <Warning>
+      May overwhelm DNS servers or hit rate limits
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Example: Core i5 CPU
+
+For a Core i5 with 4 physical cores and 8 threads (Hyper-Threading):
+
+```bash
+nproc             → 8
+PROCS=$((8 * 4))  → 32 parallel queries
+```
+
+### Checking Your CPU Configuration
+
+```bash
+# Physical cores
+grep '^core id' /proc/cpuinfo | sort -u | wc -l
+
+# Logical CPUs (threads)
+nproc
+
+# Xargs parallel limit (usually 127+)
+xargs --show-limits
+```
+
+## Real-Time Progress Display
+
+The script shows live processing statistics:
+
+```bash
+Processed: 2463489 / 7244989 (34.00%)
+```
+
+This progress indicator:
+- Updates every second
+- Shows domains processed vs. total
+- Displays percentage completion
+- Runs in a background process
+
+### Implementation
+
+```bash bwupdate/bwupdate.sh
+total=$(wc -l < step1)
+(
+    while sleep 1; do
+        processed=$(wc -l < dnslookup1 2>/dev/null)
+        percent=$(awk -v p="$processed" -v t="$total" 'BEGIN { if (t > 0) printf "%.2f", (p/t)*100; else print 100 }')
+        printf "Processed: %d / %d (%s%%)\r" "$processed" "$total" "$percent"
+    done
+) &
+progress_pid=$!
+```
+
+The progress monitor is killed after completion:
+
+```bash
+kill "$progress_pid" 2>/dev/null
+```
+
+## DNS Query Results
+
+### HIT (Domain Resolved)
+
+```bash
+HIT google.com
+google.com has address 142.251.35.238
+google.com has IPv6 address 2607:f8b0:4008:80b::200e
+google.com mail is handled by 10 smtp.google.com.
+```
+
+A "HIT" means:
+- Domain exists
+- DNS resolves successfully
+- Domain will be included in final blocklist
+
+### FAULT (Domain Failed)
+
+```bash
+FAULT testfaultdomain.com
+Host testfaultdomain.com not found: 3(NXDOMAIN)
+```
+
+A "FAULT" means:
+- Domain doesn't exist (NXDOMAIN)
+- DNS query timed out
+- Temporary DNS failure
+- Domain will be excluded from blocklist
+
+## Resume Capability
+
+The script can resume DNS lookup if interrupted:
+
+```bash bwupdate/bwupdate.sh
+if [ -s dnslookup1 ]; then
+    awk 'FNR==NR {seen[$2]=1;next} seen[$1]!=1' dnslookup1 step1
+else
+    cat step1
+fi | xargs -I {} -P "$PROCS" sh -c "..."
+```
+
+This logic:
+- Checks if `dnslookup1` file exists and has content
+- Excludes already-processed domains
+- Only queries remaining domains
+- Prevents duplicate work
+
+<Info>
+  If you interrupt the script during DNS lookup (Ctrl+C), it automatically resumes from where it left off on the next run.
+</Info>
+
+## Adjusting for Your Environment
+
+### Factors to Consider
+
+| Factor | Lower PROCS | Higher PROCS |
+|--------|-------------|-------------|
+| **CPU** | Older/slower CPU | Modern multi-core CPU |
+| **Network** | Satellite, metered, slow | Fiber, unlimited, fast |
+| **DNS Server** | Public DNS (8.8.8.8) | Local caching DNS |
+| **System Load** | Production server | Dedicated test machine |
+| **Priority** | Minimize impact | Maximize speed |
+
+### Recommended Adjustments
+
+Edit `bwupdate.sh` line 388:
+
+```bash
+# Change this line based on your needs:
+PROCS=$(($(nproc) * 4))  # Default: Aggressive
+```
+
+Replace with your preferred setting:
+
+```bash
+PROCS=$(($(nproc)))      # Conservative
+PROCS=$(($(nproc) * 2))  # Balanced  
+PROCS=$(($(nproc) * 8))  # Extreme
+```
+
+## Performance Impact
+
+<Warning>
+  **Network Saturation**: High PROCS values can saturate DNS servers, causing:
+  - Rate limiting
+  - Temporary bans
+  - Increased FAULT results (false negatives)
+  - Slower overall performance
+</Warning>
+
+### Monitoring Performance
+
+While the script runs, monitor:
+
+```bash
+# CPU usage
+htop
+
+# Network traffic
+iftop
+
+# DNS query rate
+watch -n 1 'wc -l dnslookup1'
+
+# System load
+uptime
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Too many FAULT results">
+    - Reduce PROCS value (network/DNS overload)
+    - Check DNS server responsiveness
+    - Verify internet connection stability
+    - Consider using local caching DNS (dnsmasq, unbound)
+  </Accordion>
+
+  <Accordion title="Process extremely slow">
+    - Increase PROCS value (if system can handle it)
+    - Use faster DNS servers (Cloudflare 1.1.1.1, Google 8.8.8.8)
+    - Check for bandwidth throttling
+    - Verify CPU isn't maxed out
+  </Accordion>
+
+  <Accordion title="System becomes unresponsive">
+    - Immediately reduce PROCS value
+    - Kill the script and restart with lower parallelism
+    - Monitor system resources before restarting
+    - Consider running on dedicated hardware
+  </Accordion>
+
+  <Accordion title="DNS rate limiting">
+    - Use local recursive DNS resolver
+    - Reduce PROCS significantly  
+    - Add delays between queries
+    - Spread queries across multiple DNS servers
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Card title="Domain Debugging" icon="bug" href="/update/debugging">
+  Learn about domain validation, TLD checking, Punycode conversion, and ASCII cleanup
+</Card>

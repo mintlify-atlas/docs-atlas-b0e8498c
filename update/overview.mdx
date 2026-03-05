@@ -1,0 +1,117 @@
+---
+title: "Update Process Overview"
+description: "Understanding how BlackWeb updates and optimizes its domain blocklist"
+---
+
+## Overview
+
+The update process of `blackweb.txt` consists of several steps executed in sequence by the `bwupdate.sh` script. This automated process downloads public blocklists, validates domains, performs DNS lookups, and integrates the final list with Squid-Cache.
+
+<Warning>
+  **Before You Continue**: This section explains how the update and optimization process works. **It is not necessary for users to run it.** This process can take significant time and consume substantial hardware and bandwidth resources. It is strongly recommended to use test equipment.
+</Warning>
+
+## Process Steps
+
+The update script performs the following operations in sequence:
+
+<Steps>
+  <Step title="Capture Public Blocklists">
+    Downloads domains from public blocklists and unifies them into a single file. See the complete list of sources in the project documentation.
+  </Step>
+
+  <Step title="Domain Debugging">
+    Removes overlapping domains, performs homologation to Squid-Cache format, and excludes false positives using an allowlist (`debugwl.txt`).
+  </Step>
+
+  <Step title="TLD Validation">
+    Validates domains against a comprehensive list of Public and Private Suffix TLDs (ccTLD, ccSLD, sTLD, uTLD, gSLD, gTLD, eTLD) up to 4th level domains.
+  </Step>
+
+  <Step title="Punycode/IDN Debugging">
+    Converts international characters (non-ASCII) to Punycode/IDNA format and removes hostnames larger than 63 characters (RFC 1035).
+  </Step>
+
+  <Step title="Non-ASCII Character Cleanup">
+    Removes entries with invalid encoding, non-printable characters, whitespace, and disallowed symbols, ensuring clean ASCII format.
+  </Step>
+
+  <Step title="DNS Lookup (2-Step Validation)">
+    Performs parallel DNS validation to exclude invalid or nonexistent domains. This is the most resource-intensive step.
+  </Step>
+
+  <Step title="Government TLD Exclusion">
+    Removes government-related domains (.gov, .mil, etc.) from the final blocklist.
+  </Step>
+
+  <Step title="Squid-Cache Integration">
+    Tests the final list with Squid-Cache and logs any errors for review.
+  </Step>
+</Steps>
+
+## Running the Update Script
+
+To download and execute the update script:
+
+```bash
+wget -q -N https://raw.githubusercontent.com/maravento/blackweb/master/bwupdate/bwupdate.sh && chmod +x bwupdate.sh && ./bwupdate.sh
+```
+
+<Note>
+  The script will request elevated privileges when required for Squid operations.
+</Note>
+
+## Important Considerations
+
+<AccordionGroup>
+  <Accordion title="Default Installation Path">
+    The default path for BlackWeb is `/etc/acl`. You can modify this in the script to match your preferences.
+  </Accordion>
+
+  <Accordion title="Interrupting Execution">
+    If you interrupt `bwupdate.sh` execution (Ctrl + C) during the DNS Lookup phase, the script will restart from that point on the next run. If stopped earlier, you must start from the beginning or manually modify the script to resume from a specific point.
+  </Accordion>
+
+  <Accordion title="AUFS Cache Directory">
+    If you use `aufs`, temporarily change it to `ufs` during the upgrade to avoid the error:
+    ```
+    ERROR: Can't change type of existing cache_dir aufs /var/spool/squid to ufs. Restart required
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Completion Verification
+
+After successful completion, check your system log:
+
+```bash
+tail /var/log/syslog
+```
+
+You should see:
+
+```
+BlackWeb: Done 06/05/2023 15:47:14
+```
+
+Any Squid errors during the process are saved to `SquidError.txt` for review.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Install Dependencies" icon="download" href="/update/dependencies">
+    Set up required packages and Squid installation
+  </Card>
+
+  <Card title="Run Update Script" icon="play" href="/update/update-script">
+    Execute the bwupdate.sh script
+  </Card>
+
+  <Card title="DNS Lookup Process" icon="magnifying-glass" href="/update/dns-lookup">
+    Understand parallel DNS validation
+  </Card>
+
+  <Card title="Debugging Features" icon="bug" href="/update/debugging">
+    Learn about domain validation and cleaning
+  </Card>
+</CardGroup>

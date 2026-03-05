@@ -1,0 +1,296 @@
+---
+title: "Running the Update Script"
+description: "How to execute bwupdate.sh and understand its workflow"
+---
+
+## Downloading and Running
+
+The simplest way to run the BlackWeb update is with this one-liner:
+
+```bash
+wget -q -N https://raw.githubusercontent.com/maravento/blackweb/master/bwupdate/bwupdate.sh && chmod +x bwupdate.sh && ./bwupdate.sh
+```
+
+This command:
+1. Downloads the latest `bwupdate.sh` script
+2. Makes it executable
+3. Runs the script
+
+<Warning>
+  Do **not** run this script as root. The script will request elevated privileges when needed for Squid operations.
+</Warning>
+
+## Script Initialization
+
+### User Verification
+
+The script first checks that you're not running as root:
+
+```bash bwupdate/bwupdate.sh
+# check no-root
+if [ "$(id -u)" == "0" ]; then
+    echo "❌ This script should not be run as root"
+    exit 1
+fi
+```
+
+### System Compatibility Check
+
+```bash bwupdate/bwupdate.sh
+# check SO
+UBUNTU_VERSION=$(lsb_release -rs)
+UBUNTU_ID=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
+if [[ "$UBUNTU_ID" != "ubuntu" || "$UBUNTU_VERSION" != "24.04" ]]; then
+    echo "This script requires Ubuntu 24.04. Use at your own risk"
+    # exit 1
+fi
+```
+
+### Working Directory Setup
+
+```bash bwupdate/bwupdate.sh
+# VARIABLES
+bwupdate="$(pwd)/bwupdate"
+wgetd="wget -q -c --show-progress --no-check-certificate --retry-connrefused --timeout=10 --tries=4"
+# PATH_TO_ACL (Change it to the directory of your preference)
+route="/etc/acl"
+# CREATE PATH
+if [ ! -d "$route" ]; then sudo mkdir -p "$route"; fi
+```
+
+<Info>
+  The default installation path is `/etc/acl`. Modify the `route` variable to change this location.
+</Info>
+
+## Update Workflow
+
+### Phase 1: Download Blackweb Repository
+
+The script uses a Python helper to download the `bwupdate` folder from GitHub:
+
+```bash bwupdate/bwupdate.sh
+# DOWNLOAD BLACKWEB
+echo "${bw02[$lang]}"
+$wgetd https://raw.githubusercontent.com/maravento/vault/master/scripts/python/gitfolder.py -O gitfolder.py
+chmod +x gitfolder.py
+python gitfolder.py https://github.com/maravento/blackweb/bwupdate
+```
+
+### Phase 2: Download Blocklists
+
+The script downloads from multiple public blocklist sources:
+
+```bash bwupdate/bwupdate.sh
+blurls() {
+    local url="$1"
+    local filename target i
+    local user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+    
+    filename=$(basename "${url%%\?*}" | sed 's/[^a-zA-Z0-9._-]/_/g')
+    target="bwtmp/$filename"
+    
+    # incremental suffix
+    i=1
+    while [ -e "$target" ]; do
+        target="bwtmp/${filename%.*}_$i.${filename##*.}"
+        ((i++))
+    done
+    
+    # check with curl
+    if ! curl -k -s -f -I -L -A "$user_agent" --connect-timeout 5 --retry 1 "$url" >/dev/null 2>&1; then
+        echo "❌ URL Down: $url"
+        return 1
+    fi
+    
+    # download with curl
+    echo -n "$target ... "
+    if curl -k -L -s \
+            --connect-timeout 10 --retry 3 \
+            --user-agent "$user_agent" \
+            "$url" -o "$target"; then
+        echo "✅"
+    else
+        echo "❌ ERROR"
+        return 1
+    fi
+}
+```
+
+This function:
+- Sanitizes filenames from URLs
+- Handles duplicate filenames with incremental suffixes
+- Verifies URL availability before downloading
+- Uses retry logic for reliability
+- Provides visual feedback (✅/❌) for each download
+
+### Phase 3: Download Allowlists
+
+Downloads university domains and other allowlisted domains:
+
+```bash bwupdate/bwupdate.sh
+univ() {
+    local url="$1"
+    # check with curl
+    if ! curl -k -s -f -I --connect-timeout 5 --retry 1 "$url" >/dev/null; then
+        echo "❌ URL Down: $url"
+        return 1
+    fi
+    # download
+    $wgetd "$url" -O - \
+        | grep -oiE "([a-zA-Z0-9][a-zA-Z0-9-]{1,61}\.){1,}(\.?[a-zA-Z]{2,}){1,}" \
+        | grep -Pvi '(.htm(l)?|.the|.php(il)?)$' \
+        | sed -r 's:(^\.*.?(www|ftp|xxx|wvw)[^.]*?\.|^\.\.?)::gi' \
+        | awk '{if ($1 !~ /^\./) print "." $1; else print $1}' \
+        | sort -u >> lst/debugwl.txt
+}
+univ 'https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json'
+```
+
+### Phase 4: Domain Capture and Processing
+
+Extracts and normalizes domains from all downloaded files:
+
+```bash bwupdate/bwupdate.sh
+# CAPTURING DOMAINS
+find bwtmp -type f -not -iname "*pdf" \
+  -execdir grep -oiE "([a-zA-Z0-9][a-zA-Z0-9-]{1,61}\.){1,}(\.?[a-zA-Z]{2,}){1,}" {} \; \
+| sed -r 's:(^\.*.?(www|ftp|ftps|ftpes|sftp|pop|pop3|smtp|imap|http|https)[^.]*?\.|^\.\.?)::gi' \
+| sed -r '/[^a-zA-Z0-9.-]/d; /^[^a-zA-Z0-9.]/d; /[^a-zA-Z0-9]$/d; /^[[:space:]]*$/d; /[[:space:]]/d; /^[[:space:]]*#/d; /\.{2,}/d' \
+| sort -u > stage1
+```
+
+### Phase 5: RFC 1035 Compliance
+
+Removes hostnames exceeding 63 characters:
+
+```bash bwupdate/bwupdate.sh
+# RFC 1035 Partial
+sed '/[^.]\{64\}/d' stage1 \
+| grep -vP '[A-Z]' \
+| grep -vP '(^|\.)-|-($|\.)' \
+| sed 's/^\.//g' \
+| sort -u > stage2
+```
+
+### Phase 6: Join Lists
+
+```bash bwupdate/bwupdate.sh
+# JOIN AND UPDATE LIST
+echo "${bw06[$lang]}"
+sed '/^$/d; /#/d' lst/{debugwl,invalid}.txt | sed 's/[^[:print:]\n]//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk '{if ($1 !~ /^\./) print "." $1; else print $1}' | sort -u > urls.txt
+```
+
+### Phase 7: Debug Domains
+
+Filters domains using the Python `domfilter.py` tool:
+
+```bash bwupdate/bwupdate.sh
+# DEBUGGING DOMAINS
+echo "${bw07[$lang]}"
+grep -Fvxf urls.txt capture.txt | sed 's/[^[:print:]\n]//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk '{if ($1 !~ /^\./) print "." $1; else print $1}' | sort -u > cleancapture.txt
+$wgetd https://raw.githubusercontent.com/maravento/vault/master/dofi/domfilter.py -O domfilter.py >/dev/null 2>&1
+python domfilter.py --input cleancapture.txt
+grep -Fvxf urls.txt output.txt | grep -P "^[\x00-\x7F]+$" | sort -u > finalclean
+```
+
+### Phase 8 & 9: DNS Lookup (See DNS Lookup Page)
+
+Performs two-step DNS validation (covered in detail on the [DNS Lookup page](/update/dns-lookup)).
+
+### Phase 10: TLD Filtering
+
+```bash bwupdate/bwupdate.sh
+# TLD FINAL FILTER (Exclude AllowTLDs .gov, .mil, etc., delete TLDs and NO-ASCII lines
+echo "${bw11[$lang]}"
+regex_ext=$(grep -v '^#' lst/allowtlds.txt | sed 's/$/\$/' | tr '\n' '|')
+new_regex_ext="${regex_ext%|}"
+grep -E -v "$new_regex_ext" blackweb_tmp | sort -u > blackweb_tmp2
+comm -23 <(sort blackweb_tmp2) <(sort tlds.txt) > blackweb.txt
+```
+
+### Phase 11: Squid Integration
+
+```bash bwupdate/bwupdate.sh
+# RELOAD SQUID-CACHE
+echo "${bw12[$lang]}"
+# copy blaclweb to path
+sudo cp -f blackweb.txt "$route"/blackweb.txt >/dev/null 2>&1
+# Squid Reload
+sudo bash -c 'squid -k reconfigure' 2>sqerror && sleep 20
+```
+
+## Progress Monitoring
+
+The script provides real-time progress feedback:
+
+```
+Blackweb Project
+This process can take. Be patient...
+Downloading Blackweb...
+Downloading Blocklists...
+bwtmp/hosts.txt ... ✅
+bwtmp/is.abp.txt ... ✅
+...
+Joining Lists...
+Debugging Domains...
+1st DNS Loockup...
+Processed: 2463489 / 7244989 (34.00%)
+```
+
+## Resuming Interrupted Execution
+
+The script can resume from the DNS lookup phase if interrupted:
+
+```bash bwupdate/bwupdate.sh
+# CHECK DNSLOOKUP1
+if [ ! -e "$bwupdate"/dnslookup1 ]; then
+    # DELETE OLD REPOSITORY
+    rm -rf "$bwupdate" >/dev/null 2>&1
+    # Start from beginning...
+else
+    cd "$bwupdate"
+    # Resume from DNS lookup phase
+fi
+```
+
+<Tip>
+  If you interrupt the script during DNS lookup (Ctrl+C), it will automatically resume from that point on the next run.
+</Tip>
+
+## Cleanup
+
+By default, the script removes the temporary `bwupdate` directory after completion:
+
+```bash bwupdate/bwupdate.sh
+# DELETE REPOSITORY (Optional)
+cd ..
+rm -rf "$bwupdate" >/dev/null 2>&1
+```
+
+<Note>
+  Comment out these lines if you want to preserve intermediate files for debugging.
+</Note>
+
+## Completion
+
+The script logs completion to syslog:
+
+```bash bwupdate/bwupdate.sh
+# END
+sudo bash -c 'echo "BlackWeb Done: $(date)" | tee -a /var/log/syslog'
+echo "${bw13[$lang]}"
+```
+
+Check for errors in `SquidErrors.txt` after completion.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="DNS Lookup Process" icon="magnifying-glass" href="/update/dns-lookup">
+    Understand the parallel DNS validation system
+  </Card>
+
+  <Card title="Debugging Features" icon="bug" href="/update/debugging">
+    Learn about domain validation and cleaning processes
+  </Card>
+</CardGroup>

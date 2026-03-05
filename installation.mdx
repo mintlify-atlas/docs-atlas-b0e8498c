@@ -1,0 +1,688 @@
+---
+title: Installation
+description: Comprehensive installation guide for BlackWeb including dependencies, advanced configuration, and Squid setup
+---
+
+This guide provides detailed installation instructions for BlackWeb, including system requirements, dependencies, Squid-Cache setup, and advanced configuration options.
+
+## System Requirements
+
+### Minimum Requirements
+
+- **Operating System**: Ubuntu 24.04 LTS (recommended), other Linux distributions may work
+- **RAM**: 2 GB minimum (4 GB recommended for optimal performance)
+- **Storage**: 500 MB free space for BlackWeb and working files
+- **CPU**: Any modern multi-core processor
+- **Network**: Active internet connection for downloads and updates
+
+### Software Requirements
+
+- **Squid-Cache**: Version 4.x or later
+- **Bash**: Version 5.x (for update scripts)
+- **Python**: Version 3.x (for update scripts)
+
+<Note>
+  BlackWeb is designed specifically for Squid-Cache proxy servers. It is **not recommended** for use with other proxy systems, DNS filters (Pi-hole, DNSMasq), or local hosts files due to its size (4.7M domains, 118.8 MB).
+</Note>
+
+## Dependencies
+
+### Required Packages
+
+If you plan to run BlackWeb updates locally (optional), install these dependencies:
+
+```bash
+sudo apt update
+sudo apt install -y wget git curl libnotify-bin perl tar rar unrar unzip zip gzip python-is-python3 idn2 iconv
+```
+
+<Accordion title="Dependency breakdown">
+  - **wget**: Downloads blocklist files from remote sources
+  - **git**: Clones repositories with additional blocklists
+  - **curl**: Alternative download tool with retry logic
+  - **libnotify-bin**: Desktop notifications for update status
+  - **perl**: Text processing for domain extraction
+  - **tar/rar/unrar/unzip/zip/gzip**: Archive extraction
+  - **python-is-python3**: Python 3 compatibility symlink
+  - **idn2**: International Domain Name (Punycode) conversion
+  - **iconv**: Character encoding conversion
+</Accordion>
+
+### Verify Installation
+
+Check that all dependencies are installed:
+
+```bash
+for pkg in wget git curl perl tar python3 idn2; do
+  if command -v $pkg &>/dev/null; then
+    echo "✓ $pkg is installed"
+  else
+    echo "✗ $pkg is NOT installed"
+  fi
+done
+```
+
+## Squid-Cache Installation
+
+### Installing Squid (Ubuntu/Debian)
+
+If Squid is not already installed:
+
+```bash
+# Update package list
+sudo apt update
+
+# Install Squid with OpenSSL support
+sudo apt install -y squid-openssl squid-langpack squid-common squidclient squid-purge
+```
+
+<Accordion title="Alternative: Fresh Squid installation script">
+  For a clean installation or to reinstall Squid:
+
+  ```bash
+  #!/bin/bash
+
+  # Kill old version
+  while pgrep squid > /dev/null; do
+      echo "Waiting for Squid to stop..."
+      killall -s SIGTERM squid &>/dev/null
+      sleep 5
+  done
+
+  # Squid remove (if exists)
+  apt purge -y squid* &>/dev/null
+  rm -rf /var/spool/squid* /var/log/squid* /etc/squid* /dev/shm/* &>/dev/null
+
+  # Squid install (you can use 'squid-openssl' or 'squid')
+  apt install -y squid-openssl squid-langpack squid-common squidclient squid-purge
+
+  # Create log directory
+  if [ ! -d /var/log/squid ]; then
+      mkdir -p /var/log/squid
+  fi &>/dev/null
+
+  # Create log files
+  if [[ ! -f /var/log/squid/{access,cache,store,deny}.log ]]; then
+      touch /var/log/squid/{access,cache,store,deny}.log
+  fi &>/dev/null
+
+  # Set permissions
+  chown -R proxy:proxy /var/log/squid
+
+  # Enable service
+  systemctl enable squid.service
+  systemctl start squid.service
+  
+  echo "Squid installation complete"
+  ```
+
+  Save this as `squid_install.sh`, make it executable, and run:
+
+  ```bash
+  chmod +x squid_install.sh
+  sudo ./squid_install.sh
+  ```
+</Accordion>
+
+### Verify Squid Installation
+
+```bash
+# Check Squid status
+sudo systemctl status squid
+
+# Test Squid configuration
+sudo squid -k parse
+
+# View Squid version
+squid -v
+```
+
+### Configure Squid Logging
+
+Ensure Squid logging is properly configured:
+
+```bash
+# Create log directory if it doesn't exist
+sudo mkdir -p /var/log/squid
+
+# Create log files
+sudo touch /var/log/squid/{access,cache,store,deny}.log
+
+# Set proper permissions
+sudo chown -R proxy:proxy /var/log/squid
+sudo chmod 755 /var/log/squid
+```
+
+## BlackWeb Installation
+
+### Step 1: Download BlackWeb
+
+Create the ACL directory and download BlackWeb:
+
+```bash
+# Create ACL directory
+sudo mkdir -p /etc/acl
+
+# Download BlackWeb
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz
+
+# Extract
+tar xzf blackweb.tar.gz
+
+# Move to ACL directory
+sudo mv blackweb.txt /etc/acl/blackweb.txt
+
+# Set permissions
+sudo chown proxy:proxy /etc/acl/blackweb.txt
+sudo chmod 644 /etc/acl/blackweb.txt
+```
+
+### Step 2: Verify File Integrity
+
+Always verify the downloaded file:
+
+```bash
+# Download checksum
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+
+# Verify
+LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+echo "Local:  $LOCAL"
+echo "Remote: $REMOTE"
+[ "$LOCAL" = "$REMOTE" ] && echo "✓ Checksum OK" || echo "✗ Checksum FAILED"
+```
+
+<Warning>
+  If the checksum fails, do not use the file. Re-download and verify again.
+</Warning>
+
+### Step 3: Basic Squid Configuration
+
+Edit the Squid configuration file:
+
+```bash
+sudo nano /etc/squid/squid.conf
+```
+
+Add the BlackWeb ACL and deny rule:
+
+```squid /etc/squid/squid.conf
+# INSERT YOUR OWN RULE(S) HERE TO ALLOW ACCESS FROM YOUR CLIENTS
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+```
+
+### Step 4: Test and Reload
+
+```bash
+# Test configuration
+sudo squid -k parse
+
+# If successful, reload Squid
+sudo squid -k reconfigure
+
+# Verify Squid is running
+sudo systemctl status squid
+```
+
+## Advanced Configuration
+
+BlackWeb supports several advanced configurations for fine-tuned control.
+
+### Allow Rule for Essential Domains
+
+Create an allowlist to exclude essential domains from blocking:
+
+```bash
+sudo nano /etc/acl/allowdomains.txt
+```
+
+Add essential domains (one per line):
+
+```text /etc/acl/allowdomains.txt
+.accounts.google.com
+.accounts.youtube.com
+.yahoo.com
+.github.com
+.microsoft.com
+.office.com
+.live.com
+```
+
+<Note>
+  According to [Squid's documentation](http://wiki.squid-cache.org/ConfigExamples/Streams/YouTube), subdomains like `accounts.google.com` and `accounts.youtube.com` may be used by Google for authentication. Blocking them could disrupt access to Gmail, Drive, Docs, and other services.
+</Note>
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Allow Rule for Domains (MUST be placed BEFORE blackweb rule)
+acl allowdomains dstdomain "/etc/acl/allowdomains.txt"
+http_access allow allowdomains
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+```
+
+### Block Rule for Custom Domains
+
+Add domains not included in BlackWeb:
+
+```bash
+sudo nano /etc/acl/blockdomains.txt
+```
+
+```text /etc/acl/blockdomains.txt
+.custom-site-to-block.com
+.another-blocked-domain.org
+```
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Block Rule for Custom Domains
+acl blockdomains dstdomain "/etc/acl/blockdomains.txt"
+http_access deny blockdomains
+
+# Block Rule for Blackweb
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+```
+
+### Block Punycode/IDN Domains
+
+Block internationalized domain names (IDN) to prevent [IDN homograph attacks](https://en.wikipedia.org/wiki/IDN_homograph_attack):
+
+```squid /etc/squid/squid.conf
+# Block Rule for Punycode
+acl punycode dstdom_regex -i \.xn--.*
+http_access deny punycode
+```
+
+This blocks domains like:
+- `.xn--bcher-kva.com` (bücher.com)
+- `.xn--p1ai` (Russian .рф)
+- `.xn--fiqz9s` (Chinese domains)
+
+While allowing ASCII domains:
+- `.google.com`
+- `.github.com`
+
+### Block Specific TLDs
+
+Block entire top-level domains (gTLD, sTLD, ccTLD):
+
+```bash
+sudo nano /etc/acl/blocktlds.txt
+```
+
+```text /etc/acl/blocktlds.txt
+.xxx
+.adult
+.porn
+.ru
+.tk
+.ga
+```
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Block Rule for TLDs
+acl blocktlds dstdomain "/etc/acl/blocktlds.txt"
+http_access deny blocktlds
+```
+
+**Example filtering:**
+
+Input domains:
+```
+.bardomain.xxx
+.bardomain.ru
+.foodomain.com
+.foodomain.porn
+```
+
+Result (only allowed):
+```
+.foodomain.com
+```
+
+### Block URL Patterns/Keywords
+
+Block URLs containing specific keywords:
+
+```bash
+# Download pattern blocklist
+sudo wget -P /etc/acl/ https://raw.githubusercontent.com/maravento/vault/refs/heads/master/blackshield/acl/squid/blockwords.txt
+```
+
+<Warning>
+  Pattern-based blocking can generate false positives. Use with caution.
+</Warning>
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Block Rule for Patterns (Optional)
+acl blockwords url_regex -i "/etc/acl/blockwords.txt"
+http_access deny blockwords
+```
+
+**Example filtering:**
+
+Input URLs:
+```
+.bittorrent.com
+https://www.google.com/search?q=torrent
+https://www.google.com/search?q=mydomain
+https://www.google.com/search?q=porn
+.mydomain.com
+```
+
+Result (only allowed):
+```
+https://www.google.com/search?q=mydomain
+.mydomain.com
+```
+
+### Block Streaming Services (Optional)
+
+Block streaming domains not included in BlackWeb:
+
+```bash
+sudo nano /etc/acl/streaming.txt
+```
+
+```text /etc/acl/streaming.txt
+.youtube.com
+.googlevideo.com
+.ytimg.com
+.netflix.com
+.hulu.com
+```
+
+<Note>
+  This list may contain overlapping domains. Manually clean it according to your goals:
+  
+  - **Block entire service**: Keep primary domains (`.facebook.com`, `.fbcdn.net`)
+  - **Block only streaming**: Keep specific subdomains (`.z-p3-video.flpb1-1.fna.fbcdn.net`)
+</Note>
+
+Update Squid configuration:
+
+```squid /etc/squid/squid.conf
+# Streaming Rule (Optional)
+acl streaming dstdomain "/etc/acl/streaming.txt"
+http_access deny streaming
+```
+
+### Complete Advanced Configuration
+
+Here's a complete example with all advanced rules in the correct order:
+
+```squid /etc/squid/squid.conf
+# INSERT YOUR OWN RULE(S) HERE TO ALLOW ACCESS FROM YOUR CLIENTS
+
+# Allow Rule for Domains (FIRST - highest priority)
+acl allowdomains dstdomain "/etc/acl/allowdomains.txt"
+http_access allow allowdomains
+
+# Block Rule for Punycode
+acl punycode dstdom_regex -i \.xn--.*
+http_access deny punycode
+
+# Block Rule for TLDs
+acl blocktlds dstdomain "/etc/acl/blocktlds.txt"
+http_access deny blocktlds
+
+# Block Rule for Custom Domains
+acl blockdomains dstdomain "/etc/acl/blockdomains.txt"
+http_access deny blockdomains
+
+# Block Rule for Patterns (Optional)
+acl blockwords url_regex -i "/etc/acl/blockpatterns.txt"
+http_access deny blockwords
+
+# Block Rule for Streaming (Optional)
+acl streaming dstdomain "/etc/acl/streaming.txt"
+http_access deny streaming
+
+# Block Rule for Blackweb (LAST - catch-all)
+acl blackweb dstdomain "/etc/acl/blackweb.txt"
+http_access deny blackweb
+```
+
+<Tip>
+  **Rule Order Matters!** Squid processes ACLs top-to-bottom. Always place allow rules before deny rules.
+</Tip>
+
+## Performance Optimization
+
+### Increase File Descriptor Limits
+
+BlackWeb's large size may require increasing system limits:
+
+```bash
+# Edit Squid service file
+sudo mkdir -p /etc/systemd/system/squid.service.d/
+sudo nano /etc/systemd/system/squid.service.d/override.conf
+```
+
+Add:
+
+```ini
+[Service]
+LimitNOFILE=65536
+LimitNPROC=65536
+```
+
+Reload systemd and restart Squid:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart squid
+```
+
+### Memory Allocation
+
+Ensure adequate memory cache:
+
+```squid /etc/squid/squid.conf
+# Recommended cache settings for BlackWeb
+cache_mem 256 MB
+maximum_object_size_in_memory 512 KB
+```
+
+### Cache Storage
+
+Use SSD storage for Squid cache if possible:
+
+```squid /etc/squid/squid.conf
+# Use UFS for better compatibility with large ACLs
+cache_dir ufs /var/spool/squid 10000 16 256
+```
+
+<Warning>
+  If using `aufs`, temporarily change to `ufs` during updates to avoid errors: "Can't change type of existing cache_dir aufs to ufs. Restart required"
+</Warning>
+
+## Updating BlackWeb
+
+### Manual Updates
+
+Update BlackWeb periodically to get the latest blocklists:
+
+```bash
+# Navigate to working directory
+cd /tmp
+
+# Download latest version
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz
+tar xzf blackweb.tar.gz
+
+# Verify checksum
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+[ "$LOCAL" = "$REMOTE" ] && echo "✓ Checksum OK" || (echo "✗ Checksum FAILED" && exit 1)
+
+# Backup current version
+sudo cp /etc/acl/blackweb.txt /etc/acl/blackweb.txt.bak
+
+# Install new version
+sudo mv blackweb.txt /etc/acl/blackweb.txt
+sudo chown proxy:proxy /etc/acl/blackweb.txt
+sudo chmod 644 /etc/acl/blackweb.txt
+
+# Reload Squid
+sudo squid -k reconfigure
+
+# Check for errors
+sudo tail -f /var/log/squid/cache.log
+```
+
+### Automated Updates (Cron)
+
+Set up automatic weekly updates:
+
+```bash
+sudo crontab -e
+```
+
+Add this line for weekly updates (every Sunday at 3 AM):
+
+```cron
+0 3 * * 0 /usr/local/bin/update-blackweb.sh >> /var/log/blackweb-update.log 2>&1
+```
+
+Create the update script:
+
+```bash
+sudo nano /usr/local/bin/update-blackweb.sh
+```
+
+```bash
+#!/bin/bash
+# BlackWeb Auto-Update Script
+
+cd /tmp || exit 1
+
+# Download
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.tar.gz
+tar xzf blackweb.tar.gz
+
+# Verify
+wget -q -c -N https://raw.githubusercontent.com/maravento/blackweb/master/blackweb.txt.sha256
+LOCAL=$(sha256sum blackweb.txt | awk '{print $1}')
+REMOTE=$(awk '{print $1}' blackweb.txt.sha256)
+
+if [ "$LOCAL" != "$REMOTE" ]; then
+    echo "[$(date)] Checksum verification failed"
+    exit 1
+fi
+
+# Backup and install
+cp /etc/acl/blackweb.txt /etc/acl/blackweb.txt.bak
+mv blackweb.txt /etc/acl/blackweb.txt
+chown proxy:proxy /etc/acl/blackweb.txt
+chmod 644 /etc/acl/blackweb.txt
+
+# Reload Squid
+squid -k reconfigure
+
+echo "[$(date)] BlackWeb updated successfully"
+```
+
+Make executable:
+
+```bash
+sudo chmod +x /usr/local/bin/update-blackweb.sh
+```
+
+## Troubleshooting
+
+### Check Squid Errors
+
+If Squid fails to start or reload:
+
+```bash
+# Check syntax
+sudo squid -k parse
+
+# View error log
+sudo tail -50 /var/log/squid/cache.log
+
+# Check for file permission issues
+ls -la /etc/acl/blackweb.txt
+```
+
+### Common Issues
+
+<AccordionGroup>
+  <Accordion title="ERROR: Can't read file /etc/acl/blackweb.txt">
+    **Cause**: Permission issues
+    
+    **Solution**:
+    ```bash
+    sudo chown proxy:proxy /etc/acl/blackweb.txt
+    sudo chmod 644 /etc/acl/blackweb.txt
+    ```
+  </Accordion>
+
+  <Accordion title="Squid crashes after adding BlackWeb">
+    **Cause**: Insufficient file descriptors or memory
+    
+    **Solution**: Increase system limits (see Performance Optimization section)
+  </Accordion>
+
+  <Accordion title="Web browsing is very slow">
+    **Cause**: Squid loading large ACL into memory
+    
+    **Solution**:
+    - Increase `cache_mem` in squid.conf
+    - Ensure server has adequate RAM (4GB+ recommended)
+    - Use SSD storage for cache
+  </Accordion>
+
+  <Accordion title="Some domains are incorrectly blocked">
+    **Cause**: Domain exists in upstream blocklists
+    
+    **Solution**: Add to allowlist or use `checksources.sh` to identify source:
+    ```bash
+    wget https://raw.githubusercontent.com/maravento/blackweb/refs/heads/master/bwupdate/tools/checksources.sh
+    chmod +x checksources.sh
+    ./checksources.sh
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Advanced Rules" icon="sliders" href="/usage/advanced-rules">
+    Explore advanced filtering techniques
+  </Card>
+  <Card title="Update Process" icon="arrows-rotate" href="/update/overview">
+    Learn about the automated update workflow
+  </Card>
+  <Card title="Squid Configuration" icon="gear" href="/usage/squid-configuration">
+    Basic and advanced Squid-Cache configuration
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/reference/troubleshooting">
+    Comprehensive troubleshooting guide
+  </Card>
+</CardGroup>
+
+## Support
+
+If you encounter issues not covered in this guide:
+
+1. Check the [GitHub Issues](https://github.com/maravento/blackweb/issues)
+2. Review the [README](https://github.com/maravento/blackweb)
+3. Use the source checker tool to debug domain issues
+4. Open a new issue with detailed logs and error messages
