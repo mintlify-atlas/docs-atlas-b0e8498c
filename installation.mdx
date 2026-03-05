@@ -340,7 +340,7 @@ http_access deny blocktlds
 **Example filtering:**
 
 Input domains:
-```
+```text
 .bardomain.xxx
 .bardomain.ru
 .foodomain.com
@@ -348,7 +348,7 @@ Input domains:
 ```
 
 Result (only allowed):
-```
+```text
 .foodomain.com
 ```
 
@@ -376,7 +376,7 @@ http_access deny blockwords
 **Example filtering:**
 
 Input URLs:
-```
+```text
 .bittorrent.com
 https://www.google.com/search?q=torrent
 https://www.google.com/search?q=mydomain
@@ -385,7 +385,7 @@ https://www.google.com/search?q=porn
 ```
 
 Result (only allowed):
-```
+```text
 https://www.google.com/search?q=mydomain
 .mydomain.com
 ```

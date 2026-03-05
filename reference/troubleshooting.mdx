@@ -177,7 +177,13 @@ This guide covers common issues you may encounter with BlackWeb and their soluti
        cat /path/to/SquidErrors.txt
        ```
 
-    2. Identify problematic domains
+    2. Use the `debugerror.py` script to identify problematic domains:
+       ```bash
+       wget https://raw.githubusercontent.com/maravento/blackweb/master/bwupdate/tools/debugerror.py
+       python debugerror.py
+       ```
+
+       This script compares `blackweb.txt` with Squid error logs and outputs differences to `final.txt`.
 
     3. Add legitimate domains to `allowdomains.txt`:
        ```bash
